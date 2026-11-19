@@ -1,6 +1,7 @@
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import * as dotenv from 'dotenv';
 import { requireAuth, type AuthRequest } from './src/middleware/auth.ts';
@@ -638,7 +639,12 @@ async function startServer() {
 
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(__dirname, 'dist');
+    const distPath = fs.existsSync(path.join(__dirname, 'index.html'))
+      ? __dirname
+      : fs.existsSync(path.join(__dirname, 'dist', 'index.html'))
+      ? path.join(__dirname, 'dist')
+      : path.resolve(process.cwd(), 'dist');
+
     app.use(express.static(distPath));
     app.get('*', (_req: Request, res: Response) => {
       res.sendFile(path.join(distPath, 'index.html'));

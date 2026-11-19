@@ -38,6 +38,7 @@ import {
   RAPID_SECTIONAL_MOCK_CONFIG,
   TUTOR_PRACTICE_CONFIG,
 } from '../data/seedQuestions.ts';
+import { ALL_BUILTIN_MOCK_QUESTIONS } from '../data/mockPaperQuestionBank.ts';
 import type {
   ConfidenceLevel,
   ExamConfig,
@@ -117,10 +118,10 @@ export async function ensureSeeded(defaultUserUid = 'demo-candidate-01') {
     }
 
     const existingQuestions = await db.select().from(questions);
-    if (existingQuestions.length < 200) {
-      const full200 = generateFull200QuestionBank();
+    if (existingQuestions.length < 3800) {
+      const fullBank = ALL_BUILTIN_MOCK_QUESTIONS;
       const existingCodes = new Set(existingQuestions.map((q) => q.questionCode));
-      const toInsert = full200.filter((q) => !existingCodes.has(q.questionId));
+      const toInsert = fullBank.filter((q) => !existingCodes.has(q.questionId));
 
       if (toInsert.length > 0) {
         // Seed taxonomy systems/topics idempotently without duplicating existing rows
@@ -140,7 +141,7 @@ export async function ensureSeeded(defaultUserUid = 'demo-candidate-01') {
           name: string;
         }> = [];
 
-        for (const item of CORE_ARCHETYPE_QUESTIONS) {
+        for (const item of toInsert) {
           const sysKey = `${item.subjectId}:${item.systemId}`;
           if (!sysSeen.has(sysKey)) {
             sysSeen.add(sysKey);
@@ -168,110 +169,114 @@ export async function ensureSeeded(defaultUserUid = 'demo-candidate-01') {
           await db.insert(topics).values(topBatch).onConflictDoNothing();
         }
 
-        // Batch insert questions
-        const insertedQs = await db
-          .insert(questions)
-          .values(
-            toInsert.map((q) => ({
-              questionCode: q.questionId,
-              version: q.questionVersion,
-              subjectSlug: q.subjectId,
-              subjectName: q.subjectName || q.subjectId,
-              systemSlug: q.systemId,
-              systemName: q.systemName || q.systemId,
-              topicSlug: q.topicId,
-              topicName: q.topicName || q.topicId,
-              subtopicName: q.subtopic,
-              questionType: q.questionType,
-              difficulty: q.difficulty,
-              questionText: q.question.text,
-              clinicalVignette: q.question.clinicalVignette,
-              tablesJson: q.question.tables,
-              correctOption: q.correctAnswer,
-              isPyq: q.metadata.isPYQ,
-              pyqYear: q.metadata.year,
-              source: q.metadata.source,
-              referencesJson: q.metadata.references,
-              tagsJson: q.metadata.tags,
-              status: q.status,
-            }))
-          )
-          .returning();
+        // Batch insert questions in safe chunks of 200 items to respect PostgreSQL parameter limits
+        const CHUNK_SIZE = 200;
+        for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
+          const chunk = toInsert.slice(i, i + CHUNK_SIZE);
+          const insertedQs = await db
+            .insert(questions)
+            .values(
+              chunk.map((q) => ({
+                questionCode: q.questionId,
+                version: q.questionVersion,
+                subjectSlug: q.subjectId,
+                subjectName: q.subjectName || q.subjectId,
+                systemSlug: q.systemId,
+                systemName: q.systemName || q.systemId,
+                topicSlug: q.topicId,
+                topicName: q.topicName || q.topicId,
+                subtopicName: q.subtopic,
+                questionType: q.questionType,
+                difficulty: q.difficulty,
+                questionText: q.question.text,
+                clinicalVignette: q.question.clinicalVignette,
+                tablesJson: q.question.tables,
+                correctOption: q.correctAnswer,
+                isPyq: q.metadata.isPYQ,
+                pyqYear: q.metadata.year,
+                source: q.metadata.source,
+                referencesJson: q.metadata.references,
+                tagsJson: q.metadata.tags,
+                status: q.status,
+              }))
+            )
+            .returning();
 
-        const codeToItem = new Map(toInsert.map((item) => [item.questionId, item]));
-        const optionsBatch: Array<{
-          questionId: number;
-          optionKey: string;
-          optionText: string;
-          optionExplanation: string;
-        }> = [];
-        const explanationsBatch: Array<{
-          questionId: number;
-          summary: string;
-          details: string;
-          learningPointsJson: string[];
-          optionExplanationsJson: Record<string, string>;
-        }> = [];
-        const imagesBatch: Array<{
-          questionId: number;
-          imageUrl: string;
-          caption: string;
-          altText: string;
-        }> = [];
-        const versionsBatch: Array<{
-          questionId: number;
-          version: number;
-          snapshotJson: QuestionBankSchemaItem;
-        }> = [];
+          const codeToItem = new Map(chunk.map((item) => [item.questionId, item]));
+          const optionsBatch: Array<{
+            questionId: number;
+            optionKey: string;
+            optionText: string;
+            optionExplanation: string;
+          }> = [];
+          const explanationsBatch: Array<{
+            questionId: number;
+            summary: string;
+            details: string;
+            learningPointsJson: string[];
+            optionExplanationsJson: Record<string, string>;
+          }> = [];
+          const imagesBatch: Array<{
+            questionId: number;
+            imageUrl: string;
+            caption: string;
+            altText: string;
+          }> = [];
+          const versionsBatch: Array<{
+            questionId: number;
+            version: number;
+            snapshotJson: QuestionBankSchemaItem;
+          }> = [];
 
-        for (const dbQ of insertedQs) {
-          const item = codeToItem.get(dbQ.questionCode);
-          if (!item) continue;
+          for (const dbQ of insertedQs) {
+            const item = codeToItem.get(dbQ.questionCode);
+            if (!item) continue;
 
-          for (const opt of item.options) {
-            optionsBatch.push({
+            for (const opt of item.options) {
+              optionsBatch.push({
+                questionId: dbQ.id,
+                optionKey: opt.id,
+                optionText: opt.text,
+                optionExplanation: item.explanation.optionExplanations[opt.id] || '',
+              });
+            }
+
+            explanationsBatch.push({
               questionId: dbQ.id,
-              optionKey: opt.id,
-              optionText: opt.text,
-              optionExplanation: item.explanation.optionExplanations[opt.id] || '',
+              summary: item.explanation.summary,
+              details: item.explanation.details,
+              learningPointsJson: item.explanation.learningPoints,
+              optionExplanationsJson: item.explanation.optionExplanations,
+            });
+
+            for (const img of item.question.images) {
+              imagesBatch.push({
+                questionId: dbQ.id,
+                imageUrl: img.url,
+                caption: img.caption,
+                altText: img.altText,
+              });
+            }
+
+            versionsBatch.push({
+              questionId: dbQ.id,
+              version: item.questionVersion,
+              snapshotJson: item,
             });
           }
 
-          explanationsBatch.push({
-            questionId: dbQ.id,
-            summary: item.explanation.summary,
-            details: item.explanation.details,
-            learningPointsJson: item.explanation.learningPoints,
-            optionExplanationsJson: item.explanation.optionExplanations,
-          });
-
-          for (const img of item.question.images) {
-            imagesBatch.push({
-              questionId: dbQ.id,
-              imageUrl: img.url,
-              caption: img.caption,
-              altText: img.altText,
-            });
+          if (optionsBatch.length > 0) {
+            await db.insert(questionOptions).values(optionsBatch);
           }
-
-          versionsBatch.push({
-            questionId: dbQ.id,
-            version: item.questionVersion,
-            snapshotJson: item,
-          });
-        }
-
-        if (optionsBatch.length > 0) {
-          await db.insert(questionOptions).values(optionsBatch);
-        }
-        if (explanationsBatch.length > 0) {
-          await db.insert(questionExplanations).values(explanationsBatch);
-        }
-        if (imagesBatch.length > 0) {
-          await db.insert(questionImages).values(imagesBatch);
-        }
-        if (versionsBatch.length > 0) {
-          await db.insert(questionVersions).values(versionsBatch);
+          if (explanationsBatch.length > 0) {
+            await db.insert(questionExplanations).values(explanationsBatch);
+          }
+          if (imagesBatch.length > 0) {
+            await db.insert(questionImages).values(imagesBatch);
+          }
+          if (versionsBatch.length > 0) {
+            await db.insert(questionVersions).values(versionsBatch);
+          }
         }
       }
     }
@@ -976,11 +981,12 @@ async function executeStartNewExamSession(params: {
     // Order questions deterministically for scheduled numbered Grand Mocks (so each of the
     // 10 NEET-PG and 10 INI-CET mocks stays a consistent benchmark paper), while using
     // true randomized Fisher-Yates shuffling for repeatable sprints, tutor sessions, and custom tests.
-    const preferredCodes = new Set<string>(
-      Array.isArray((baseConfig as any).preferredQuestionCodes)
-        ? (baseConfig as any).preferredQuestionCodes
-        : []
-    );
+    const preferredCodesList: string[] = Array.isArray(
+      (baseConfig as any).preferredQuestionCodes
+    )
+      ? (baseConfig as any).preferredQuestionCodes
+      : [];
+    const preferredCodes = new Set<string>(preferredCodesList);
 
     const effectiveKey = params.configKey || baseConfig.examId || '';
     const isScheduledBenchmarkMock =
@@ -1003,10 +1009,13 @@ async function executeStartNewExamSession(params: {
       }
     }
 
-    if (preferredCodes.size > 0) {
-      const preferredFirst = orderedPool.filter((q) => preferredCodes.has(q.questionCode));
+    if (preferredCodesList.length > 0) {
+      const qByCode = new Map(allPublished.map((q) => [q.questionCode, q]));
+      const preferredOrdered = preferredCodesList
+        .map((code) => qByCode.get(code))
+        .filter((q): q is NonNullable<typeof q> => Boolean(q));
       const remainingPool = orderedPool.filter((q) => !preferredCodes.has(q.questionCode));
-      allPublished = [...preferredFirst, ...remainingPool];
+      allPublished = [...preferredOrdered, ...remainingPool];
     } else {
       allPublished = orderedPool;
     }

@@ -1,4 +1,5 @@
 import type { QuestionBankSchemaItem, ExamConfig } from '../types/domain.ts';
+import { MOCK_PREFERRED_CODES, ALL_BUILTIN_MOCK_QUESTIONS } from './mockPaperQuestionBank.ts';
 
 export const NEET_PG_SUBJECTS = [
   { slug: 'anatomy', name: 'Anatomy', code: 'ANAT', orderIndex: 1 },
@@ -368,12 +369,14 @@ export const NEET_PG_10_MOCK_CONFIGS: ExamConfig[] = NEET_PG_MOCK_CATALOG_SPECS.
   ...DEFAULT_NEET_PG_FULL_MOCK_CONFIG,
   examId: `neet-pg-full-mock-${spec.num}`,
   examName: `NEET-PG 2026 Grand Mock Test ${spec.num} (${spec.date})`,
+  preferredQuestionCodes: MOCK_PREFERRED_CODES[`neet-pg-full-mock-${spec.num}`] || [],
 }));
 
 export const INICET_10_MOCK_CONFIGS: ExamConfig[] = INICET_MOCK_CATALOG_SPECS.map((spec) => ({
   ...DEFAULT_INICET_FULL_MOCK_CONFIG,
   examId: `inicet-full-mock-${spec.num}`,
   examName: `INI-CET All-India Grand Mock Test ${spec.num} (${spec.date})`,
+  preferredQuestionCodes: MOCK_PREFERRED_CODES[`inicet-full-mock-${spec.num}`] || [],
 }));
 
 export const BUILTIN_MOCK_CONFIGS: ExamConfig[] = [
