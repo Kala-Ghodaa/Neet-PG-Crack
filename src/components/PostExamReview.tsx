@@ -42,6 +42,7 @@ export const PostExamReview: React.FC<PostExamReviewProps> = ({
   const [analytics, setAnalytics] = useState<any>(null);
   const [activeFilter, setActiveFilter] = useState<ReviewFilterType>('all');
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState<number>(0);
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     async function fetchResult() {
@@ -364,7 +365,7 @@ export const PostExamReview: React.FC<PostExamReviewProps> = ({
                     }`}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 text-xs">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
                         <span className="font-mono font-bold text-slate-900">
                           Q{q.questionOrder}
                         </span>
@@ -372,6 +373,17 @@ export const PostExamReview: React.FC<PostExamReviewProps> = ({
                         <span className="text-slate-600 font-medium truncate">
                           {q.subjectName}
                         </span>
+                        {q.response.isMarkedForReview && (
+                          <span
+                            className={`text-[11px] font-semibold ${
+                              saved ? 'text-purple-800' : 'text-purple-600'
+                            }`}
+                          >
+                            {saved
+                              ? '· Answered & Marked (Evaluated)'
+                              : '· Marked Only (Not Evaluated)'}
+                          </span>
+                        )}
                         {q.response.confidence === 'main_guess' && (
                           <span className="text-[11px] text-purple-800 font-semibold">
                             · Main Guess
@@ -422,6 +434,14 @@ export const PostExamReview: React.FC<PostExamReviewProps> = ({
                     <span>
                       {activeQ.topicName} ({activeQ.subtopicName})
                     </span>
+                    {activeQ.isPyq && (
+                      <>
+                        <span>·</span>
+                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
+                          PYQ{activeQ.pyqYear ? ` ${activeQ.pyqYear}` : ''}
+                        </span>
+                      </>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-3 mt-2 text-xs font-mono tabular-nums text-slate-600">
                     <span className="flex items-center gap-1">
@@ -451,7 +471,9 @@ export const PostExamReview: React.FC<PostExamReviewProps> = ({
                       <>
                         <span>·</span>
                         <span className="text-purple-800 font-semibold">
-                          Marked for Review
+                          {activeQ.response.savedOption
+                            ? 'Answered & Marked for Review (Evaluated)'
+                            : 'Marked for Review Only (Not Evaluated)'}
                         </span>
                       </>
                     )}
@@ -533,24 +555,42 @@ export const PostExamReview: React.FC<PostExamReviewProps> = ({
 
               {/* Clinical Images / Schematics if present */}
               {Array.isArray(activeQ.question.images) &&
-                activeQ.question.images.map((img: any, imgIdx: number) => (
-                  <figure
-                    key={imgIdx}
-                    className="border border-slate-200 rounded-lg p-3 bg-slate-900 text-slate-200 max-w-xl"
-                  >
-                    <img
-                      src={img.url}
-                      alt={img.altText || 'Clinical investigation schematic'}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-auto rounded max-h-96 object-contain"
-                    />
-                    {img.caption && (
-                      <figcaption className="text-xs text-slate-400 mt-2 font-mono break-words">
-                        {img.caption}
-                      </figcaption>
-                    )}
-                  </figure>
-                ))}
+                activeQ.question.images.map((img: any, imgIdx: number) => {
+                  const imgKey = `${activeQ.questionCode}-${imgIdx}-${img.url}`;
+                  const hasFailed = Boolean(failedImages[imgKey]);
+                  return (
+                    <figure
+                      key={imgIdx}
+                      className="border border-slate-200 rounded-lg p-3 bg-slate-900 text-slate-200 max-w-xl"
+                    >
+                      {hasFailed ? (
+                        <div className="p-4 rounded bg-slate-800 border border-slate-700 text-xs text-amber-200 space-y-1">
+                          <div className="font-semibold">
+                            Clinical image unavailable (Question ID: {activeQ.questionCode})
+                          </div>
+                          <p className="text-slate-300">
+                            {img.altText || 'Image source could not be loaded.'}
+                          </p>
+                        </div>
+                      ) : (
+                        <img
+                          src={img.url}
+                          alt={img.altText || 'Clinical investigation schematic'}
+                          referrerPolicy="no-referrer"
+                          onError={() =>
+                            setFailedImages((prev) => ({ ...prev, [imgKey]: true }))
+                          }
+                          className="w-full h-auto rounded max-h-96 object-contain"
+                        />
+                      )}
+                      {img.caption && (
+                        <figcaption className="text-xs text-slate-400 mt-2 font-mono break-words">
+                          {img.caption}
+                        </figcaption>
+                      )}
+                    </figure>
+                  );
+                })}
 
               {/* Options with Correct / Selected / Second Guess / Eliminated Audit */}
               <div className="space-y-2.5">

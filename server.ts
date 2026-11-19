@@ -219,11 +219,28 @@ async function startServer() {
     }
   });
 
+  const VALID_OPTION_KEYS = new Set(['A', 'B', 'C', 'D']);
+  const parseValidOption = (val: unknown): string | null | undefined => {
+    if (val === null || val === undefined || val === '') return null;
+    if (typeof val === 'string' && VALID_OPTION_KEYS.has(val)) return val;
+    return undefined;
+  };
+  const sanitizeOptionList = (val: unknown): string[] => {
+    if (!Array.isArray(val)) return [];
+    return [...new Set(val.filter((item): item is string => typeof item === 'string' && VALID_OPTION_KEYS.has(item)))];
+  };
+
   app.post('/api/v1/exams/:sessionId/responses', requireAuth, async (req: AuthRequest, res: Response) => {
     const sessionId = parsePositiveInt(req.params.sessionId);
     const testQuestionId = parsePositiveInt(req.body.testQuestionId);
     if (!sessionId || !testQuestionId) {
       res.status(400).json({ error: 'Valid sessionId and testQuestionId are required' });
+      return;
+    }
+    const parsedPending = parseValidOption(req.body.selectedPendingOption);
+    const parsedSecondGuess = parseValidOption(req.body.secondGuessOption);
+    if (parsedPending === undefined || parsedSecondGuess === undefined) {
+      res.status(400).json({ error: 'Option selections must be null or one of A, B, C, D.' });
       return;
     }
     try {
@@ -232,14 +249,12 @@ async function startServer() {
         userUid: req.user!.uid,
         testQuestionId,
         action: req.body.action || 'save_and_next',
-        selectedPendingOption: req.body.selectedPendingOption ?? null,
+        selectedPendingOption: parsedPending,
         guessModeActive: Boolean(req.body.guessModeActive),
-        secondGuessOption: req.body.secondGuessOption ?? null,
-        eliminatedOptions: Array.isArray(req.body.eliminatedOptions)
-          ? req.body.eliminatedOptions
-          : [],
+        secondGuessOption: parsedSecondGuess,
+        eliminatedOptions: sanitizeOptionList(req.body.eliminatedOptions),
         clearOptions: req.body.clearOptions,
-        additionalTimeSeconds: Math.max(0, Math.min(600, Number(req.body.additionalTimeSeconds || 0))),
+        additionalTimeSeconds: Math.max(0, Math.min(120, Math.round(Number(req.body.additionalTimeSeconds || 0)))),
         nextQuestionIndex:
           typeof req.body.nextQuestionIndex === 'number' && req.body.nextQuestionIndex >= 0
             ? req.body.nextQuestionIndex
@@ -261,19 +276,23 @@ async function startServer() {
       res.status(400).json({ error: 'Valid sessionId and testQuestionId are required' });
       return;
     }
+    const parsedPending = parseValidOption(req.body.selectedPendingOption);
+    const parsedSecondGuess = parseValidOption(req.body.secondGuessOption);
+    if (parsedPending === undefined || parsedSecondGuess === undefined) {
+      res.status(400).json({ error: 'Option selections must be null or one of A, B, C, D.' });
+      return;
+    }
     try {
       const updated = await recordQuestionMutation({
         sessionId,
         userUid: req.user!.uid,
         testQuestionId,
         action: req.body.navigateNext ? 'mark_review_and_next' : 'save_and_mark_review',
-        selectedPendingOption: req.body.selectedPendingOption ?? null,
+        selectedPendingOption: parsedPending,
         guessModeActive: Boolean(req.body.guessModeActive),
-        secondGuessOption: req.body.secondGuessOption ?? null,
-        eliminatedOptions: Array.isArray(req.body.eliminatedOptions)
-          ? req.body.eliminatedOptions
-          : [],
-        additionalTimeSeconds: Math.max(0, Math.min(600, Number(req.body.additionalTimeSeconds || 0))),
+        secondGuessOption: parsedSecondGuess,
+        eliminatedOptions: sanitizeOptionList(req.body.eliminatedOptions),
+        additionalTimeSeconds: Math.max(0, Math.min(120, Math.round(Number(req.body.additionalTimeSeconds || 0)))),
         nextQuestionIndex: req.body.nextQuestionIndex,
       });
       res.json({ response: updated });

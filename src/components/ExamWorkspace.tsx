@@ -52,12 +52,15 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
   const [secondGuessOption, setSecondGuessOption] = useState<string | null>(null);
   const [eliminatedOptions, setEliminatedOptions] = useState<string[]>([]);
 
-  // Clear Response / Submit / Lock Section confirmation modals
+  // Clear Response / Submit / Lock Section / Exit confirmation modals
   const [showClearModal, setShowClearModal] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [showLockSectionModal, setShowLockSectionModal] = useState(false);
+  const [showExitModal, setShowExitModal] = useState(false);
   const [showMobilePalette, setShowMobilePalette] = useState(false);
   const [isSubmittingOrLocking, setIsSubmittingOrLocking] = useState(false);
+  const [jumpInput, setJumpInput] = useState('');
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
   // Timers & Sync state
   const [sectionRemainingSec, setSectionRemainingSec] = useState<number>(2520);
@@ -286,6 +289,22 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
     };
   }, [sessionData, triggerAudibleWarning]);
 
+  // Reset viewport scroll to top whenever the active question changes (BUG-027)
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [currentIdx]);
+
+  // Warn before accidental browser tab close/refresh during an active exam (BUG-020)
+  useEffect(() => {
+    if (!sessionData || sessionData.status !== 'in_progress' || isSubmittingOrLocking) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [sessionData, isSubmittingOrLocking]);
+
   const currentQuestion = questions[currentIdx];
   const strictSaveMode = Boolean(sessionData?.config?.settings?.strictSaveMode);
   const isSectional = Boolean(sessionData?.config?.pattern?.sectional);
@@ -293,10 +312,11 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
 
   const getElapsedActiveSeconds = () => {
     const now = Date.now();
-    // Cap single contiguous interval to 120s so idle tab time does not inflate analytics
+    // Cap single contiguous interval to 120s so idle tab time does not inflate analytics;
+    // allow 0s for sub-second rapid toggles/saves (BUG-037)
     const rawSec = Math.round((now - questionEntryTimestampRef.current) / 1000);
     questionEntryTimestampRef.current = now;
-    return Math.min(120, Math.max(1, rawSec));
+    return Math.min(120, Math.max(0, rawSec));
   };
 
   const persistAction = async (
@@ -586,16 +606,10 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
   };
 
   const handleOptionSelect = (optKey: string) => {
-    // NBEMS Rule (b): Clicking the already-chosen option again deselects it
-    const isCurrentlySelected =
-      pendingOption === optKey || (!pendingOption && currentQuestion?.response?.savedOption === optKey);
-    if (isCurrentlySelected) {
-      if (currentQuestion?.response?.savedOption === optKey) {
-        // Silently clear the committed response while preserving 2nd guess & eliminations
-        executeClearResponse(false, false);
-      } else {
-        setPendingOption(null);
-      }
+    // NBEMS Rule (b) + Strict Save Mode: Re-clicking the active selection clears local pending state only.
+    // Do NOT commit to DB until Save & Next or Clear Response is explicitly clicked.
+    if (pendingOption === optKey) {
+      setPendingOption(null);
       return;
     }
 
@@ -788,7 +802,7 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
   });
 
   shortcutHandlersRef.current = {
-    modalsOpen: showClearModal || showSubmitModal || showLockSectionModal,
+    modalsOpen: showClearModal || showSubmitModal || showLockSectionModal || showExitModal,
     toggleGuess: handleToggleGuessMode,
     toggleEliminate: handleToggleEliminateOption,
     toggleSecondGuess: handleToggleSecondGuess,
@@ -807,7 +821,9 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
+        e.target instanceof HTMLSelectElement ||
+        (e.target instanceof HTMLElement &&
+          (e.target.isContentEditable || e.target.getAttribute('role') === 'textbox'))
       ) {
         return;
       }
@@ -864,11 +880,11 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const formatTimer = (seconds: number) => {
+  const formatTimer = (seconds: number, alwaysShowHours = false) => {
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    if (hrs > 0) {
+    if (hrs > 0 || alwaysShowHours) {
       return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(
         secs
       ).padStart(2, '0')}`;
@@ -952,6 +968,11 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
     pendingOption !== null &&
     pendingOption !== currentQuestion.response.savedOption;
 
+  const hasUnsavedPendingDeselection =
+    strictSaveMode &&
+    pendingOption === null &&
+    currentQuestion.response.savedOption !== null;
+
   const isPracticeMode =
     sessionData.mode === 'practice' ||
     Boolean(sessionData.config?.settings?.showExplanationDuringExam);
@@ -964,9 +985,10 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
           {/* Left: Exam Name & Mode */}
           <div className="flex items-center gap-4 min-w-0">
             <button
-              onClick={onExitToDashboard}
-              title="Exit to Dashboard (Progress is persisted)"
-              className="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white border border-slate-700 rounded transition-colors whitespace-nowrap shrink-0"
+              type="button"
+              onClick={() => setShowExitModal(true)}
+              title="Exit to Dashboard (Timer continues running on server)"
+              className="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white border border-slate-700 rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               ← Exit
             </button>
@@ -1080,7 +1102,7 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
               </div>
             )}
 
-            {/* Overall Timer */}
+            {/* Overall Timer (Consistent HH:MM:SS for exams >= 60 minutes — BUG-018) */}
             <div
               className={`px-2.5 py-1 rounded border text-xs font-mono tabular-nums flex items-center gap-1.5 ${getTimerStyle(
                 overallRemainingSec
@@ -1088,7 +1110,13 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
               role="timer"
               aria-label="Total examination remaining time"
             >
-              <span>Total: {formatTimer(overallRemainingSec)}</span>
+              <span>
+                Total:{' '}
+                {formatTimer(
+                  overallRemainingSec,
+                  (sessionData?.config?.pattern?.durationSeconds ?? 0) >= 3600
+                )}
+              </span>
             </div>
 
             {/* Sound Toggle */}
@@ -1169,6 +1197,11 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
                 <span className="text-xs font-mono text-slate-500">
                   ID: {currentQuestion.questionCode}
                 </span>
+                {currentQuestion.isPyq && (
+                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
+                    PYQ{currentQuestion.pyqYear ? ` ${currentQuestion.pyqYear}` : ''}
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-4">
@@ -1197,6 +1230,11 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
                     {hasUnsavedPendingSelection && (
                       <span className="text-amber-700 ml-1">
                         (Pending change to {pendingOption} — click Save & Next)
+                      </span>
+                    )}
+                    {hasUnsavedPendingDeselection && (
+                      <span className="text-amber-700 ml-1">
+                        (Pending deselection — click Save & Next to clear)
                       </span>
                     )}
                   </span>
@@ -1285,24 +1323,42 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
 
               {/* Clinical Images / Schematics if present */}
               {Array.isArray(currentQuestion.question.images) &&
-                currentQuestion.question.images.map((img: any, imgIdx: number) => (
-                  <figure
-                    key={imgIdx}
-                    className="border border-slate-200 rounded-lg p-3 bg-slate-900 text-slate-200 max-w-xl"
-                  >
-                    <img
-                      src={img.url}
-                      alt={img.altText || 'Clinical investigation schematic'}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-auto rounded max-h-96 object-contain"
-                    />
-                    {img.caption && (
-                      <figcaption className="text-xs text-slate-400 mt-2 font-mono break-words">
-                        {img.caption}
-                      </figcaption>
-                    )}
-                  </figure>
-                ))}
+                currentQuestion.question.images.map((img: any, imgIdx: number) => {
+                  const imgKey = `${currentQuestion.questionCode}-${imgIdx}-${img.url}`;
+                  const hasFailed = Boolean(failedImages[imgKey]);
+                  return (
+                    <figure
+                      key={imgIdx}
+                      className="border border-slate-200 rounded-lg p-3 bg-slate-900 text-slate-200 max-w-xl"
+                    >
+                      {hasFailed ? (
+                        <div className="p-4 rounded bg-slate-800 border border-slate-700 text-xs text-amber-200 space-y-1">
+                          <div className="font-semibold">
+                            Clinical image could not be loaded (Question ID: {currentQuestion.questionCode})
+                          </div>
+                          <p className="text-slate-300">
+                            {img.altText || 'Use the clinical vignette and caption below.'}
+                          </p>
+                        </div>
+                      ) : (
+                        <img
+                          src={img.url}
+                          alt={img.altText || 'Clinical investigation schematic'}
+                          referrerPolicy="no-referrer"
+                          onError={() =>
+                            setFailedImages((prev) => ({ ...prev, [imgKey]: true }))
+                          }
+                          className="w-full h-auto rounded max-h-96 object-contain"
+                        />
+                      )}
+                      {img.caption && (
+                        <figcaption className="text-xs text-slate-400 mt-2 font-mono break-words">
+                          {img.caption}
+                        </figcaption>
+                      )}
+                    </figure>
+                  );
+                })}
 
               {/* GUESS & CONFIDENCE INTELLIGENCE CONTROL BAR */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2 pb-1 border-b border-slate-200">
@@ -1349,10 +1405,10 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
                   return currentQuestion.question.options.map((opt: any) => {
                     const isSelectedPending = pendingOption === opt.id;
                     const isSavedCommitted = currentQuestion.response.savedOption === opt.id;
+                    const isPendingDeselect = isSavedCommitted && pendingOption === null;
                     const isEliminated = eliminatedOptions.includes(opt.id);
                     const isSecondGuess = secondGuessOption === opt.id;
-                    const isMainGuessVisual =
-                      (isSelectedPending || isSavedCommitted) && guessModeActive;
+                    const isMainGuessVisual = isSelectedPending && guessModeActive;
                     const isPracticeCorrect =
                       showPracticeFeedback &&
                       opt.id === currentQuestion.question.correctOption;
@@ -1374,8 +1430,10 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
                       containerStyle = 'bg-[#E9D5FF] border-[#A855F7] text-slate-950 border-2';
                     } else if (isSecondGuess) {
                       containerStyle = 'bg-[#FED7AA] border-[#F97316] text-slate-950 border-2';
-                    } else if (isSelectedPending || isSavedCommitted) {
+                    } else if (isSelectedPending) {
                       containerStyle = 'bg-sky-50 border-sky-600 text-slate-950 border-2';
+                    } else if (isPendingDeselect) {
+                      containerStyle = 'bg-amber-50/50 border-amber-400 border-dashed text-slate-900';
                     } else if (isEliminated) {
                       containerStyle = 'bg-slate-50 border-slate-200 text-slate-400 opacity-75';
                     }
@@ -1399,7 +1457,7 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
                                 ? 'bg-purple-700 text-white border-purple-800'
                                 : isSecondGuess
                                 ? 'bg-orange-600 text-white border-orange-700'
-                                : isSelectedPending || isSavedCommitted
+                                : isSelectedPending
                                 ? 'bg-sky-600 text-white border-sky-700'
                                 : 'bg-slate-100 text-slate-700 border-slate-300'
                             }`}
@@ -1428,9 +1486,14 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
                                   ✕ Incorrect Selection
                                 </span>
                               )}
-                              {isSavedCommitted && (
+                              {isSavedCommitted && !isPendingDeselect && (
                                 <span className="font-semibold text-emerald-800">
                                   ● Committed Answer
+                                </span>
+                              )}
+                              {isPendingDeselect && (
+                                <span className="font-semibold text-amber-800">
+                                  ○ Deselected Locally (Click Save & Next to clear committed answer)
                                 </span>
                               )}
                               {isSelectedPending && !isSavedCommitted && strictSaveMode && (
@@ -1714,10 +1777,42 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
             </div>
           </div>
 
-          {/* Question Grid */}
-          <div className="p-4 flex-1 overflow-y-auto max-h-[calc(100vh-340px)]">
-            <div className="grid grid-cols-5 gap-2">
-              {questions.map((q, idx) => {
+          {/* Jump to Question # Input (BUG-026) */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const num = Number(jumpInput.trim());
+              if (!Number.isInteger(num) || num < 1 || num > questions.length) {
+                showTransientBanner(`Enter a valid question number between 1 and ${questions.length}.`, 2500);
+                return;
+              }
+              setJumpInput('');
+              handlePaletteJump(num - 1);
+            }}
+            className="px-4 py-2.5 border-b border-slate-200 bg-slate-50 flex items-center gap-2"
+          >
+            <input
+              type="number"
+              min={1}
+              max={questions.length}
+              value={jumpInput}
+              onChange={(e) => setJumpInput(e.target.value)}
+              placeholder={`Jump to Q# (1–${questions.length})`}
+              aria-label="Jump to question number"
+              className="flex-1 min-w-0 px-2.5 py-1 rounded border border-slate-300 bg-white text-xs font-mono text-slate-900 focus:outline-none focus:border-sky-500"
+            />
+            <button
+              type="submit"
+              className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer shrink-0"
+            >
+              Go
+            </button>
+          </form>
+
+          {/* Question Grid (Grouped by Section in Sectional Exams — BUG-038) */}
+          <div className="p-4 flex-1 overflow-y-auto max-h-[calc(100vh-390px)] space-y-4">
+            {(() => {
+              const renderTile = (q: any, idx: number) => {
                 const pState: PaletteQuestionState = derivePaletteState(q.response);
                 const isCurrent = idx === currentIdx;
                 const isDifferentLockedSection =
@@ -1787,8 +1882,47 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
                     )}
                   </button>
                 );
-              })}
-            </div>
+              };
+
+              if (isSectional && sections.length > 1) {
+                return sections.map((sec) => {
+                  const secItems = questions
+                    .map((q, idx) => ({ q, idx }))
+                    .filter(({ q }) => q.sectionIndex === sec.sectionIndex);
+                  if (secItems.length === 0) return null;
+                  const isActiveSec = sec.sectionIndex === activeSectionIndex;
+                  return (
+                    <div key={sec.id} className="space-y-2">
+                      <div
+                        className={`flex items-center justify-between px-2 py-1 rounded text-[11px] font-semibold ${
+                          isActiveSec
+                            ? 'bg-sky-50 text-sky-900 border border-sky-200'
+                            : 'bg-slate-100 text-slate-500 border border-slate-200'
+                        }`}
+                      >
+                        <span>{sec.name}</span>
+                        <span className="font-mono text-[10px]">
+                          {isActiveSec
+                            ? 'Active'
+                            : sec.status === 'locked'
+                            ? 'Locked'
+                            : 'Upcoming'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-5 gap-2">
+                        {secItems.map(({ q, idx }) => renderTile(q, idx))}
+                      </div>
+                    </div>
+                  );
+                });
+              }
+
+              return (
+                <div className="grid grid-cols-5 gap-2">
+                  {questions.map((q, idx) => renderTile(q, idx))}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Bottom Keyboard Shortcuts Cheat Sheet */}
@@ -1966,6 +2100,48 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
                 className="px-5 py-2 rounded bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
               >
                 {isSubmittingOrLocking ? 'Submitting...' : 'Submit & Generate Intelligence Report'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* EXIT EXAMINATION CONFIRMATION MODAL (BUG-019 / MF-001) */}
+      {showExitModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-lg max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center gap-2 text-slate-900">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+              <h3 className="text-base font-bold">Leave Active Examination?</h3>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              <strong>Important:</strong> Leaving the exam screen does <strong>not</strong> pause
+              the server-authoritative countdown timer. Your committed answers remain saved and you
+              can resume anytime before the deadline expires.
+            </p>
+            {(hasUnsavedPendingSelection || hasUnsavedPendingDeselection) && (
+              <div className="p-3 rounded bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                Question {currentQuestion.questionOrder} has an unsaved pending change. Click{' '}
+                <strong>Stay in Exam</strong> and press <strong>Save &amp; Next</strong> first if
+                you want it persisted.
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowExitModal(false)}
+                className="px-4 py-2 rounded border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Stay in Exam
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExitModal(false);
+                  onExitToDashboard();
+                }}
+                className="px-4 py-2 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer"
+              >
+                Exit to Dashboard
               </button>
             </div>
           </div>

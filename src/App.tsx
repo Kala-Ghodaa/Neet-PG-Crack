@@ -13,7 +13,7 @@ import {
 } from './lib/api.ts';
 import { ExamWorkspace } from './components/ExamWorkspace.tsx';
 import { PostExamReview } from './components/PostExamReview.tsx';
-import { IntelligenceDashboard } from './components/IntelligenceDashboard.tsx';
+import { IntelligenceDashboard, type DashboardSubTab } from './components/IntelligenceDashboard.tsx';
 import { CustomTestGeneratorModal } from './components/CustomTestGeneratorModal.tsx';
 import { AdminQuestionBank } from './components/AdminQuestionBank.tsx';
 import { NavigationDrawer } from './components/NavigationDrawer.tsx';
@@ -40,6 +40,7 @@ export default function App() {
   const [importModalTab, setImportModalTab] = useState<ImportModalTab>('import');
   const [mocksRefreshKey, setMocksRefreshKey] = useState<number>(0);
   const [startingExamKey, setStartingExamKey] = useState<string | null>(null);
+  const [dashboardSubTab, setDashboardSubTab] = useState<DashboardSubTab>('overview');
   const isStartingExamRef = useRef<boolean>(false);
 
   const openImportModal = (tab: ImportModalTab = 'import') => {
@@ -298,8 +299,14 @@ export default function App() {
         ) : route.view === 'review' ? (
           <PostExamReview
             sessionId={route.sessionId}
-            onBackToDashboard={() => setRoute({ view: 'dashboard' })}
-            onOpenFullAnalytics={() => setRoute({ view: 'dashboard' })}
+            onBackToDashboard={() => {
+              setDashboardSubTab('overview');
+              setRoute({ view: 'dashboard' });
+            }}
+            onOpenFullAnalytics={() => {
+              setDashboardSubTab('guess_5050');
+              setRoute({ view: 'dashboard' });
+            }}
           />
         ) : route.view === 'admin' ? (
           <AdminQuestionBank />
@@ -310,7 +317,10 @@ export default function App() {
             onReviewSession={(sessionId: number) => setRoute({ view: 'review', sessionId })}
             onOpenImportModal={() => openImportModal('import')}
             onOpenPromptGuide={() => openImportModal('prompts')}
-            onBackToDashboard={() => setRoute({ view: 'dashboard' })}
+            onBackToDashboard={() => {
+              setDashboardSubTab('overview');
+              setRoute({ view: 'dashboard' });
+            }}
             startingExamKey={startingExamKey}
             refreshKey={mocksRefreshKey}
           />
@@ -323,6 +333,7 @@ export default function App() {
             onNavigateToMocks={() => setRoute({ view: 'mocks' })}
             onOpenImportModal={() => openImportModal('import')}
             startingExamKey={startingExamKey}
+            initialSubTab={dashboardSubTab}
           />
         )}
       </div>
@@ -343,7 +354,7 @@ export default function App() {
       )}
 
       {/* Quiet Footer */}
-      <footer className="border-t border-slate-200 bg-white px-6 py-4 mt-12">
+      <footer className="border-t border-slate-200 bg-white px-6 py-4 mt-12 pb-20 md:pb-4">
         <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-4 text-xs text-slate-500">
           <span>
             PG-PREP ARENA · NEET PG & INI-CET Examination & Performance Intelligence Platform
@@ -353,6 +364,57 @@ export default function App() {
           </span>
         </div>
       </footer>
+
+      {/* Mobile Bottom Quick-Navigation Bar (BUG-024 / BUG-025) */}
+      <nav
+        aria-label="Mobile quick navigation"
+        className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 px-2 py-2 flex items-center justify-around text-[11px] font-semibold text-slate-600 shadow-lg"
+      >
+        <button
+          type="button"
+          onClick={() => {
+            setDashboardSubTab('overview');
+            setRoute({ view: 'dashboard' });
+          }}
+          className={`px-2 py-1 rounded ${
+            route.view === 'dashboard' ? 'text-sky-700 bg-sky-50' : ''
+          }`}
+        >
+          Dashboard
+        </button>
+        <button
+          type="button"
+          onClick={() => setRoute({ view: 'mocks' })}
+          className={`px-2 py-1 rounded ${
+            route.view === 'mocks' ? 'text-sky-700 bg-sky-50' : ''
+          }`}
+        >
+          Mocks
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowCustomModal(true)}
+          className="px-2 py-1 rounded"
+        >
+          Custom
+        </button>
+        <button
+          type="button"
+          onClick={navigateToLatestReview}
+          className={`px-2 py-1 rounded ${
+            route.view === 'review' ? 'text-sky-700 bg-sky-50' : ''
+          }`}
+        >
+          Review
+        </button>
+        <button
+          type="button"
+          onClick={() => openImportModal('import')}
+          className="px-2 py-1 rounded text-slate-900 bg-slate-100"
+        >
+          + Import
+        </button>
+      </nav>
 
       {/* Navigation Hamburger Drawer */}
       <NavigationDrawer
@@ -365,7 +427,14 @@ export default function App() {
             return;
           }
           setError(null);
-          setRoute({ view } as ActiveRoute);
+          if (view === 'dashboard') {
+            setDashboardSubTab('overview');
+            setRoute({ view: 'dashboard' });
+          } else if (view === 'mocks') {
+            setRoute({ view: 'mocks' });
+          } else if (view === 'admin') {
+            setRoute({ view: 'admin' });
+          }
         }}
         onStartFullMock={() => handleStartExamPreset('neet-pg-full-mock-1')}
         onOpenCustomTest={() => setShowCustomModal(true)}

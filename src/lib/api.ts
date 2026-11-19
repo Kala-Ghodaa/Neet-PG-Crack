@@ -106,10 +106,15 @@ export async function flushOfflineMutations(): Promise<number> {
       });
       flushedCount++;
     } catch (err: any) {
-      // If server explicitly rejected due to locked section or completed exam, discard from retry queue
+      // Discard stale queued mutations if server rejected due to locked section, completed/submitted exam, or invalid payload
+      const msg = String(err?.message || '').toLowerCase();
       if (
-        err.message?.includes('locked') ||
-        err.message?.includes('completed')
+        msg.includes('locked') ||
+        msg.includes('completed') ||
+        msg.includes('submitted') ||
+        msg.includes('auto_submitted') ||
+        msg.includes('not found') ||
+        msg.includes('option selections must be')
       ) {
         continue;
       }

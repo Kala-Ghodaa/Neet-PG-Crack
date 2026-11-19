@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Play,
   Sliders,
@@ -24,6 +24,13 @@ import {
 } from '../types/domain.ts';
 import { KnowledgeHeatmap, resolveSubjectSlug } from './KnowledgeHeatmap.tsx';
 
+export type DashboardSubTab =
+  | 'overview'
+  | 'guess_5050'
+  | 'subjects_topics'
+  | 'speed_gaps'
+  | 'revision';
+
 interface IntelligenceDashboardProps {
   analyticsData: any;
   onStartExamPreset: (configKey: string, filters?: any) => void;
@@ -32,6 +39,7 @@ interface IntelligenceDashboardProps {
   onNavigateToMocks?: () => void;
   onOpenImportModal?: () => void;
   startingExamKey?: string | null;
+  initialSubTab?: DashboardSubTab;
 }
 
 export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
@@ -42,12 +50,15 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
   onNavigateToMocks,
   onOpenImportModal,
   startingExamKey = null,
+  initialSubTab = 'overview',
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<
-    'overview' | 'guess_5050' | 'subjects_topics' | 'speed_gaps' | 'revision'
-  >('overview');
+  const [activeSubTab, setActiveSubTab] = useState<DashboardSubTab>(initialSubTab);
   const [trendRange, setTrendRange] = useState<'3' | '5' | '10' | 'all'>('all');
   const [subjectSortBy, setSubjectSortBy] = useState<'accuracy' | 'netScore' | 'guessPercentage'>('accuracy');
+
+  useEffect(() => {
+    setActiveSubTab(initialSubTab);
+  }, [initialSubTab]);
 
   if (!analyticsData) return null;
 

@@ -114,6 +114,9 @@ export const CustomTestGeneratorModal: React.FC<CustomTestGeneratorModalProps> =
                   const cnt = Number(e.target.value);
                   setQuestionCount(cnt);
                   setDurationMinutes(Math.max(10, Math.round(cnt * 1.05)));
+                  if (cnt < 20) {
+                    setSectional(false);
+                  }
                 }}
                 className="w-full px-3 py-2 rounded border border-slate-300 text-xs font-mono bg-white"
               >
@@ -227,13 +230,26 @@ export const CustomTestGeneratorModal: React.FC<CustomTestGeneratorModalProps> =
               <div className="text-xs font-bold text-slate-800">
                 NBEMS Engine Rules
               </div>
-              <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+              <label
+                className={`flex items-start gap-2 text-xs ${
+                  questionCount < 20 ? 'text-slate-400 cursor-not-allowed' : 'text-slate-700 cursor-pointer'
+                }`}
+              >
                 <input
                   type="checkbox"
-                  checked={sectional}
+                  checked={questionCount >= 20 && sectional}
+                  disabled={questionCount < 20}
                   onChange={(e) => setSectional(e.target.checked)}
+                  className="mt-0.5"
                 />
-                <span>Time-locked 5-Sectional Mode (Cannot revisit locked sections)</span>
+                <span>
+                  Time-locked Sectional Mode (Cannot revisit locked sections)
+                  {questionCount < 20 && (
+                    <span className="block text-[11px] text-amber-700 mt-0.5">
+                      Requires 20+ questions; drills under 20 Qs run continuously.
+                    </span>
+                  )}
+                </span>
               </label>
               <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
                 <input

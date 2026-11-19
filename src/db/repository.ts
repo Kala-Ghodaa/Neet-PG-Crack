@@ -26,7 +26,7 @@ import {
   revisionRecords,
   adminAuditLogs,
 } from './schema.ts';
-import { eq, desc, and, inArray } from 'drizzle-orm';
+import { eq, desc, and, inArray, sql } from 'drizzle-orm';
 import {
   NEET_PG_SUBJECTS,
   CORE_ARCHETYPE_QUESTIONS,
@@ -577,6 +577,41 @@ export async function computeAndPersistSessionResult(sessionId: number, userUid:
       .where(eq(testSessions.id, sessionId));
     if (!session) throw new Error('Session not found');
 
+    // Short-circuit if immutable test result was already computed & persisted for this session (BUG-022)
+    const existingResult = await db
+      .select()
+      .from(testResults)
+      .where(eq(testResults.sessionId, sessionId))
+      .limit(1);
+
+    if (existingResult.length > 0) {
+      const r = existingResult[0];
+      return {
+        formulaVersion: 'v1.0-transparent',
+        totalQuestions: r.totalQuestions,
+        attemptedCount: r.attemptedCount,
+        correctCount: r.correctCount,
+        incorrectCount: r.incorrectCount,
+        unattemptedCount: r.unattemptedCount,
+        score: r.score,
+        maxMarks: r.maxMarks,
+        percentageScore: r.percentageScore,
+        accuracy: r.accuracy,
+        attemptRate: r.attemptRate,
+        positiveMarks: r.positiveMarks,
+        negativeMarks: r.negativeMarks,
+        totalTimeSeconds: r.totalTimeSeconds,
+        avgTimeSeconds: r.avgTimeSeconds,
+        medianTimeSeconds: r.medianTimeSeconds,
+        fastestCorrectSeconds: r.fastestCorrectSeconds,
+        slowestIncorrectSeconds: r.slowestIncorrectSeconds,
+        subjectBreakdown: (r.subjectBreakdownJson as any) || [],
+        topicBreakdown: (r.topicBreakdownJson as any) || [],
+        guessIntelligence: (r.guessAnalyticsJson as any) || {},
+        answerChangeIntelligence: (r.answerChangeAnalyticsJson as any) || {},
+      };
+    }
+
     const config = session.configSnapshotJson as ExamConfig;
     const tqs = await db
       .select()
@@ -635,68 +670,60 @@ export async function computeAndPersistSessionResult(sessionId: number, userUid:
       config.markingScheme || { correct: 4, incorrect: -1, unattempted: 0 }
     );
 
-    // Upsert test_results
-    const existingResult = await db
-      .select()
-      .from(testResults)
-      .where(eq(testResults.sessionId, sessionId));
+    await db.insert(testResults).values({
+      sessionId,
+      userUid,
+      totalQuestions: analytics.totalQuestions,
+      attemptedCount: analytics.attemptedCount,
+      correctCount: analytics.correctCount,
+      incorrectCount: analytics.incorrectCount,
+      unattemptedCount: analytics.unattemptedCount,
+      score: analytics.score,
+      maxMarks: analytics.maxMarks,
+      percentageScore: analytics.percentageScore,
+      accuracy: analytics.accuracy,
+      attemptRate: analytics.attemptRate,
+      positiveMarks: analytics.positiveMarks,
+      negativeMarks: analytics.negativeMarks,
+      totalTimeSeconds: analytics.totalTimeSeconds,
+      avgTimeSeconds: analytics.avgTimeSeconds,
+      medianTimeSeconds: analytics.medianTimeSeconds,
+      fastestCorrectSeconds: analytics.fastestCorrectSeconds,
+      slowestIncorrectSeconds: analytics.slowestIncorrectSeconds,
+      markingSchemeSnapshotJson: config.markingScheme,
+      subjectBreakdownJson: analytics.subjectBreakdown,
+      topicBreakdownJson: analytics.topicBreakdown,
+      guessAnalyticsJson: analytics.guessIntelligence,
+      answerChangeAnalyticsJson: analytics.answerChangeIntelligence,
+    });
 
-    if (existingResult.length === 0) {
-      await db.insert(testResults).values({
-        sessionId,
-        userUid,
-        totalQuestions: analytics.totalQuestions,
-        attemptedCount: analytics.attemptedCount,
-        correctCount: analytics.correctCount,
-        incorrectCount: analytics.incorrectCount,
-        unattemptedCount: analytics.unattemptedCount,
+    await db.insert(analyticsSnapshots).values({
+      userUid,
+      sessionId,
+      formulaVersion: analytics.formulaVersion,
+      overallMetricsJson: {
         score: analytics.score,
         maxMarks: analytics.maxMarks,
-        percentageScore: analytics.percentageScore,
         accuracy: analytics.accuracy,
         attemptRate: analytics.attemptRate,
-        positiveMarks: analytics.positiveMarks,
-        negativeMarks: analytics.negativeMarks,
-        totalTimeSeconds: analytics.totalTimeSeconds,
         avgTimeSeconds: analytics.avgTimeSeconds,
-        medianTimeSeconds: analytics.medianTimeSeconds,
-        fastestCorrectSeconds: analytics.fastestCorrectSeconds,
-        slowestIncorrectSeconds: analytics.slowestIncorrectSeconds,
-        markingSchemeSnapshotJson: config.markingScheme,
-        subjectBreakdownJson: analytics.subjectBreakdown,
-        topicBreakdownJson: analytics.topicBreakdown,
-        guessAnalyticsJson: analytics.guessIntelligence,
-        answerChangeAnalyticsJson: analytics.answerChangeIntelligence,
-      });
+        negativeMarks: analytics.negativeMarks,
+      },
+      knowledgeGapsJson: [...analytics.topicBreakdown]
+        .sort((a, b) => b.knowledgeGapScore - a.knowledgeGapScore)
+        .slice(0, 10),
+      speedAccuracyMatrixJson: analytics.topicBreakdown.map((t) => ({
+        topicName: t.topicName,
+        subjectName: t.subjectName,
+        accuracy: t.accuracy,
+        avgTimeSeconds: t.avgTimeSeconds,
+        quadrant: t.quadrant,
+        sampleSize: t.totalQuestions,
+      })),
+      retentionMetricsJson: {},
+    });
 
-      await db.insert(analyticsSnapshots).values({
-        userUid,
-        sessionId,
-        formulaVersion: analytics.formulaVersion,
-        overallMetricsJson: {
-          score: analytics.score,
-          maxMarks: analytics.maxMarks,
-          accuracy: analytics.accuracy,
-          attemptRate: analytics.attemptRate,
-          avgTimeSeconds: analytics.avgTimeSeconds,
-          negativeMarks: analytics.negativeMarks,
-        },
-        knowledgeGapsJson: analytics.topicBreakdown
-          .sort((a, b) => b.knowledgeGapScore - a.knowledgeGapScore)
-          .slice(0, 10),
-        speedAccuracyMatrixJson: analytics.topicBreakdown.map((t) => ({
-          topicName: t.topicName,
-          subjectName: t.subjectName,
-          accuracy: t.accuracy,
-          avgTimeSeconds: t.avgTimeSeconds,
-          quadrant: t.quadrant,
-          sampleSize: t.totalQuestions,
-        })),
-        retentionMetricsJson: {},
-      });
-    }
-
-    // Regenerate study recommendations & revision records from latest knowledge gaps
+    // Aggregate longitudinal study recommendations & spaced-repetition queue across recent sessions (BUG-023)
     await refreshStudyRecommendationsAndRevisions(userUid, analytics.topicBreakdown);
 
     return analytics;
@@ -708,9 +735,95 @@ export async function computeAndPersistSessionResult(sessionId: number, userUid:
 
 async function refreshStudyRecommendationsAndRevisions(
   userUid: string,
-  topicsList: ReturnType<typeof calculateCompleteExamAnalytics>['topicBreakdown']
+  latestTopicsList: ReturnType<typeof calculateCompleteExamAnalytics>['topicBreakdown']
 ) {
-  const sortedByGap = [...topicsList].sort(
+  // Aggregate across up to the 10 most recent completed sessions so a short 10-Q drill never wipes full-mock gaps
+  const recentResults = await db
+    .select({
+      topicBreakdownJson: testResults.topicBreakdownJson,
+    })
+    .from(testResults)
+    .where(eq(testResults.userUid, userUid))
+    .orderBy(desc(testResults.createdAt))
+    .limit(10);
+
+  type AggTopic = ReturnType<typeof calculateCompleteExamAnalytics>['topicBreakdown'][number];
+  const mergedMap = new Map<
+    string,
+    {
+      topic: AggTopic;
+      totalQ: number;
+      attempted: number;
+      correct: number;
+      negImpact: number;
+      weightedTime: number;
+      weightedGuess: number;
+      weightedGap: number;
+      reasons: Set<string>;
+    }
+  >();
+
+  const allBreakdowns: AggTopic[][] =
+    recentResults.length > 0
+      ? recentResults.map((r) => (Array.isArray(r.topicBreakdownJson) ? (r.topicBreakdownJson as AggTopic[]) : []))
+      : [latestTopicsList];
+
+  for (const list of allBreakdowns) {
+    for (const t of list) {
+      const key = `${t.subjectName}::${t.topicName}::${t.subtopicName}`;
+      const existing = mergedMap.get(key);
+      const qCnt = Math.max(1, Number(t.totalQuestions || 0));
+      const att = Number(t.attempted || 0);
+      const corr = Math.round((Number(t.accuracy || 0) / 100) * att);
+      if (!existing) {
+        mergedMap.set(key, {
+          topic: { ...t },
+          totalQ: qCnt,
+          attempted: att,
+          correct: corr,
+          negImpact: Number(t.negativeMarksImpact || 0),
+          weightedTime: Number(t.avgTimeSeconds || 0) * Math.max(1, att),
+          weightedGuess: Number(t.guessFrequency || 0) * Math.max(1, att),
+          weightedGap: Number(t.knowledgeGapScore || 0) * qCnt,
+          reasons: new Set(Array.isArray(t.knowledgeGapReasons) ? t.knowledgeGapReasons : []),
+        });
+      } else {
+        existing.totalQ += qCnt;
+        existing.attempted += att;
+        existing.correct += corr;
+        existing.negImpact = Number((existing.negImpact + Number(t.negativeMarksImpact || 0)).toFixed(2));
+        existing.weightedTime += Number(t.avgTimeSeconds || 0) * Math.max(1, att);
+        existing.weightedGuess += Number(t.guessFrequency || 0) * Math.max(1, att);
+        existing.weightedGap += Number(t.knowledgeGapScore || 0) * qCnt;
+        for (const reason of Array.isArray(t.knowledgeGapReasons) ? t.knowledgeGapReasons : []) {
+          existing.reasons.add(reason);
+        }
+      }
+    }
+  }
+
+  const aggregatedTopics: AggTopic[] = Array.from(mergedMap.values()).map((entry) => {
+    const acc =
+      entry.attempted > 0 ? Number(((entry.correct / entry.attempted) * 100).toFixed(1)) : 0;
+    const avgTime =
+      entry.attempted > 0 ? Number((entry.weightedTime / entry.attempted).toFixed(1)) : entry.topic.avgTimeSeconds;
+    const guessFreq =
+      entry.attempted > 0 ? Number((entry.weightedGuess / entry.attempted).toFixed(1)) : entry.topic.guessFrequency;
+    const gapScore = Number((entry.weightedGap / Math.max(1, entry.totalQ)).toFixed(1));
+    return {
+      ...entry.topic,
+      totalQuestions: entry.totalQ,
+      attempted: entry.attempted,
+      accuracy: acc,
+      avgTimeSeconds: avgTime,
+      guessFrequency: guessFreq,
+      negativeMarksImpact: entry.negImpact,
+      knowledgeGapScore: gapScore,
+      knowledgeGapReasons: Array.from(entry.reasons).slice(0, 3),
+    };
+  });
+
+  const sortedByGap = [...aggregatedTopics].sort(
     (a, b) => b.knowledgeGapScore - a.knowledgeGapScore
   );
 
@@ -1221,6 +1334,8 @@ async function executeStartNewExamSession(params: {
           text: q.questionText,
           clinicalVignette: q.clinicalVignette,
           tables: q.tablesJson,
+          isPyq: Boolean(q.isPyq),
+          pyqYear: q.pyqYear ?? null,
           images: qImgs.map((im) => ({
             url: im.imageUrl,
             caption: im.caption,
@@ -1363,6 +1478,8 @@ export async function getExamSessionState(sessionId: number, userUid: string) {
         topicName: tq.topicName,
         subtopicName: tq.subtopicName,
         difficulty: tq.difficulty,
+        isPyq: Boolean(snap?.isPyq),
+        pyqYear: snap?.pyqYear ?? null,
         isBookmarked: bookmarkedQIds.has(tq.questionId),
         question: {
           text: snap.text,
@@ -1547,6 +1664,31 @@ export async function recordQuestionMutation(params: {
         .where(eq(studentResponses.id, existingResp.id))
         .returning();
 
+      // Track confidence transition on a committed answer (BUG-028)
+      if (existingResp.savedOption && nextConfidence !== existingResp.confidence) {
+        const existingRevs = await db
+          .select()
+          .from(answerRevisions)
+          .where(
+            and(
+              eq(answerRevisions.sessionId, params.sessionId),
+              eq(answerRevisions.testQuestionId, params.testQuestionId)
+            )
+          );
+        await db.insert(answerRevisions).values({
+          sessionId: params.sessionId,
+          testQuestionId: params.testQuestionId,
+          questionId: existingResp.questionId,
+          revisionNumber: existingRevs.length + 1,
+          previousOption: existingResp.savedOption,
+          newOption: existingResp.savedOption,
+          previousConfidence: existingResp.confidence,
+          newConfidence: nextConfidence,
+          wasReviewedBeforeChange: existingResp.isMarkedForReview,
+          timeSpentBeforeChangeSeconds: existingResp.timeSpentSeconds,
+        });
+      }
+
       return updatedRow;
     }
 
@@ -1595,7 +1737,8 @@ export async function recordQuestionMutation(params: {
         secondGuessOption: transition.updated.secondGuessOption,
         eliminatedOptionsJson: transition.updated.eliminatedOptions,
         timeSpentSeconds: transition.updated.timeSpentSeconds,
-        visitCount: existingResp.visitCount + 1,
+        // Preserve visitCount on in-place actions; actual visits increment upon arriving at a question (BUG-003)
+        visitCount: Math.max(1, existingResp.visitCount),
         firstAnsweredAt: transition.updated.firstAnsweredAt
           ? new Date(transition.updated.firstAnsweredAt)
           : null,
@@ -1632,7 +1775,7 @@ export async function recordQuestionMutation(params: {
       });
     }
 
-    // Update currentQuestionIndex on session if provided and mark target question visited
+    // Update currentQuestionIndex on session if provided and increment visitCount on newly entered target question
     if (typeof params.nextQuestionIndex === 'number') {
       await db
         .update(testSessions)
@@ -1645,10 +1788,13 @@ export async function recordQuestionMutation(params: {
         .where(eq(testQuestions.sessionId, params.sessionId));
       allTqs.sort((a, b) => a.questionOrder - b.questionOrder);
       const targetTq = allTqs[params.nextQuestionIndex];
-      if (targetTq) {
+      if (targetTq && targetTq.id !== existingResp.testQuestionId) {
         await db
           .update(studentResponses)
-          .set({ visited: true })
+          .set({
+            visited: true,
+            visitCount: sql`${studentResponses.visitCount} + 1`,
+          })
           .where(
             and(
               eq(studentResponses.sessionId, params.sessionId),

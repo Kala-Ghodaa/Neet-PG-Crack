@@ -1,0 +1,365 @@
+# 🐛 PG-PREP ARENA — Comprehensive QA Bug Report
+
+> **QA Persona:** Dr. Ananya Sharma, Senior NEET PG Aspirant (3rd attempt, exam in 45 days)
+> **Date:** 2026-11-19
+> **Testing Method:** Full code audit simulating real exam journey — from login → dashboard → start mock → 200Q exam → timer expiry → submit → review → analytics → custom test → import → admin
+> **Total Bugs Found:** 42
+
+---
+
+## 🔴 CRITICAL BUGS (Exam-Breaking — Data Loss / Wrong Score)
+
+### BUG-001 — Auth Bypass: Any User Can Impersonate Any Other User via `x-demo-user-uid` Header
+- **Severity:** 🔴 Critical
+- **Category:** Security
+- **Component:** [auth.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/middleware/auth.ts#L40-L65)
+- **Summary:** When no `Authorization: Bearer` header is present, the server accepts ANY `x-demo-user-uid` header value and creates/authenticates as that user — in production.
+- **Steps to Reproduce:** Send `curl -H "x-demo-user-uid: victim-user-01" /api/v1/analytics/overview`
+- **Expected:** Demo mode should be disabled in production or restricted to whitelisted UIDs.
+- **Actual:** Any HTTP client can access, modify, or submit exams for ANY user by crafting the header. No environment check (`NODE_ENV`) gates this fallback.
+- **Code Reference:** `auth.ts` L40-65 — `if (demoHeader)` block runs unconditionally in all environments.
+
+### BUG-002 — Race Condition: Double-Click "Start Exam" Can Auto-Submit Your First Session
+- **Severity:** 🔴 Critical
+- **Category:** Logic / Data
+- **Component:** [repository.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/db/repository.ts#L866-L868)
+- **Summary:** `reconcileUserActiveSessions(userUid, true)` auto-submits ALL in-progress sessions before creating a new one. If the idempotency guard's 15-second window is missed (e.g., slow network, 16s delay), the first session gets force-submitted with 0 answers.
+- **Steps to Reproduce:** 1) Click "Start Full Mock" → session created. 2) Network is slow, 16+ seconds pass. 3) Click again → first session auto-submitted with 0/200 attempted.
+- **Expected:** Only sessions past their `overallDeadlineAt` should be auto-submitted. Active exams with remaining time should NOT be auto-submitted just because a new start is requested.
+- **Actual:** `reconcileUserActiveSessions` with `forceSubmit=true` unconditionally submits all in-progress sessions regardless of remaining time.
+
+### BUG-003 — Timer Drift: `visitCount` Increments on EVERY `persistAction` Call, Not Just Actual Visits
+- **Severity:** 🔴 Critical
+- **Category:** Logic / Data
+- **Component:** [repository.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/db/repository.ts#L1589)
+- **Summary:** Server increments `visitCount` by 1 on every `recordQuestionMutation` call — including guess toggles, elimination toggles, and second-guess tags. A student who toggles 3 options as eliminated shows `visitCount: 4` even though they visited the question only once.
+- **Steps to Reproduce:** Visit Q1 → Toggle guess mode → Eliminate option A → Eliminate option B → Save & Next. visitCount = 4 instead of 1.
+- **Expected:** `visitCount` should only increment on actual navigation TO the question (palette jump or next/back), not on in-question interactions.
+- **Actual:** `visitCount: existingResp.visitCount + 1` at L1589 runs for ALL action types including `update_guess_or_elimination`.
+
+### BUG-004 — `selectedPendingOption` Can Be an Arbitrary String — No Server-Side Validation
+- **Severity:** 🔴 Critical
+- **Category:** Security / Data Integrity
+- **Component:** [server.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/server.ts#L235)
+- **Summary:** The server accepts `selectedPendingOption` as any string from the client. A malicious client can save `"E"`, `"ABCD"`, or `"<script>..."` as the answer option. This corrupts scoring (never matches `correctOption` A/B/C/D) and could cause XSS in review.
+- **Steps to Reproduce:** POST to `/api/v1/exams/:id/responses` with `{"selectedPendingOption": "Z", "action": "save_and_next"}`.
+- **Expected:** Server should validate that `selectedPendingOption` is `null` or one of `['A', 'B', 'C', 'D']`.
+- **Actual:** No validation. The value is saved directly to `saved_option` column.
+
+### BUG-005 — No Admin Role Check on Admin API Endpoints
+- **Severity:** 🔴 Critical
+- **Category:** Security
+- **Component:** [server.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/server.ts#L523-L600)
+- **Summary:** All `/api/v1/admin/*` endpoints (create questions, bulk import, export full bank, audit logs) only require `requireAuth` — any authenticated student can create/delete/export questions and read admin audit logs.
+- **Steps to Reproduce:** Login as student → `GET /api/v1/admin/questions/export` → Full question bank with correct answers exported.
+- **Expected:** Admin endpoints should check `req.user.role === 'admin'` and return 403 for students.
+- **Actual:** No role check exists. The `role` field is set in auth middleware but never checked.
+
+### BUG-006 — Any User Can Switch Their Role to Admin
+- **Severity:** 🔴 Critical
+- **Category:** Security
+- **Component:** [server.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/server.ts#L104-L113)
+- **Summary:** `POST /api/v1/auth/role` with `{"role": "admin"}` allows any authenticated user to escalate their own role to admin.
+- **Steps to Reproduce:** Login as student → POST `/api/v1/auth/role` body `{"role":"admin"}` → User is now admin.
+- **Expected:** Role changes should require an existing admin to authorize, or be disabled for self-service.
+- **Actual:** Any user can set their own role to admin.
+
+---
+
+## 🟠 HIGH SEVERITY BUGS (Wrong Results / Major UX Failure)
+
+### BUG-007 — Offline Queue Replays Can Corrupt Exam State After Submission
+- **Severity:** 🟠 High
+- **Category:** Data Integrity
+- **Component:** [api.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/lib/api.ts#L94-L122)
+- **Summary:** `flushOfflineMutations()` replays queued mutations in order after coming online. If the exam was auto-submitted server-side while offline, queued responses get discarded only if the error message contains `'locked'` or `'completed'` — but the actual server error says `"Cannot modify responses in a completed examination"` which doesn't contain `'locked'` but does contain `'completed'`, so it works. However, **auto-submitted** sessions say `'auto_submitted'` not `'completed'` — the check at L111 may not catch all cases.
+- **Steps to Reproduce:** Go offline → answer 10 questions → timer expires server-side → come online → offline queue replays.
+- **Expected:** All mutations to already-submitted exams should be cleanly discarded.
+- **Actual:** Error message matching is brittle. If server changes the error message, stale mutations get re-queued indefinitely.
+
+### BUG-008 — `effectiveOption` Uses `!== undefined` Instead of `!== null` — Can Accidentally Clear Answers
+- **Severity:** 🟠 High
+- **Category:** Logic
+- **Component:** [examEngine.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/services/examEngine.ts#L224-L225)
+- **Summary:** `const effectiveOption = selectedPendingOption !== undefined ? selectedPendingOption : current.savedOption;` — When `selectedPendingOption` is explicitly `null` (user cleared selection), `null !== undefined` is `true`, so `effectiveOption = null`. This clears the previously saved answer on `save_and_next` even though the user may not have intended to clear.
+- **Steps to Reproduce:** Have option A saved → Navigate away and back → Click "Save & Next" without selecting anything.
+- **Expected:** Previously saved answer should be preserved.
+- **Actual:** `selectedPendingOption` is `null` (no pending change), so `effectiveOption = null`, clearing the saved answer.
+
+### BUG-009 — `secondGuessNotMatchingCorrect` Counts All Non-Matching Second Guesses, Not "Correct" Ones
+- **Severity:** 🟠 High
+- **Category:** Logic / Analytics
+- **Component:** [analyticsEngine.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/services/analyticsEngine.ts#L253-L254)
+- **Summary:** Variable `secondGuessNotMatchingCorrect` increments when `secondGuessOption !== correctOption`. The name suggests "not matching but correct" (contradictory), but it actually counts "second guesses that were wrong." The variable name is misleading and may cause incorrect display in analytics UI.
+- **Expected:** Name should be `secondGuessNotMatchingCount` or `secondGuessIncorrect`.
+- **Actual:** Misleading counter name may lead to wrong interpretation in future feature development.
+
+### BUG-010 — Post-Exam Review "Deep Performance & Guess Analytics" Button Navigates to Dashboard Instead of Analytics
+- **Severity:** 🟠 High
+- **Category:** UX / Navigation
+- **Component:** [App.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/App.tsx#L302-L303)
+- **Summary:** `PostExamReview` has `onOpenFullAnalytics={() => setRoute({ view: 'dashboard' })}`. The "Deep Performance & Guess Analytics" button takes you to the Dashboard, not to a dedicated analytics view.
+- **Steps to Reproduce:** Complete exam → Post-Exam Review → Click "Deep Performance & Guess Analytics" button.
+- **Expected:** Opens a detailed analytics/intelligence dashboard for this session.
+- **Actual:** Navigates to the generic dashboard page, losing the session context.
+
+### BUG-011 — `createPool()` Called on Every Health Check — Connection Pool Leak
+- **Severity:** 🟠 High
+- **Category:** Performance / Infrastructure
+- **Component:** [server.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/server.ts#L73-L90)
+- **Summary:** `app.get('/api/health')` calls `createPool()` on EVERY request. If `createPool` creates a new Pool instance (common pg pattern), this leaks connection pools. Under load with Kubernetes health probes hitting every 10s, this will exhaust database connections.
+- **Expected:** Reuse the existing shared pool from `db/index.ts`.
+- **Actual:** `const pool = createPool()` creates a new pool per health check request.
+
+### BUG-012 — `handleGoogleLogin` Silently Swallows Auth Errors and Switches to Demo Profile
+- **Severity:** 🟠 High
+- **Category:** UX / Security
+- **Component:** [App.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/App.tsx#L106-L119)
+- **Summary:** If Google sign-in fails for ANY reason (network error, popup blocked, Firebase misconfigured), the catch block silently toggles between demo candidate profiles. Users will never see an error — they'll think they signed in but are actually on a shared demo account.
+- **Steps to Reproduce:** 1) Try to sign in on a browser with popups blocked. 2) No error shown. 3) User is now on demo-candidate-01's data.
+- **Expected:** Show clear error "Sign-in failed — using demo profile" or "Popup blocked — please allow popups."
+- **Actual:** Silently switches profile with no indication of failure.
+
+### BUG-013 — Keyboard Shortcut Conflicts: `G` Key Triggers Guess Mode While Typing in Search/Inputs
+- **Severity:** 🟠 High
+- **Category:** UX
+- **Component:** [ExamWorkspace.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/components/ExamWorkspace.tsx#L806-L813)
+- **Summary:** The keyboard handler checks for `HTMLInputElement`, `HTMLTextAreaElement`, and `HTMLSelectElement` targets, but NOT `contenteditable` elements or elements with `role="textbox"`. If any rich text component is added in the future, shortcuts will fire while typing.
+- **Additionally:** The `X` key (clear response) could be accidentally hit while typing notes if any note feature is added. No confirmation for destructive keyboard shortcuts.
+
+### BUG-014 — Timer `additionalTimeSeconds` Capped at 120s Client-Side but 600s Server-Side
+- **Severity:** 🟠 High
+- **Category:** Data Integrity
+- **Component:** [ExamWorkspace.tsx L297-299](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/components/ExamWorkspace.tsx#L297-L299) vs [server.ts L242](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/server.ts#L242)
+- **Summary:** Client caps time-per-question-entry at 120s to prevent idle tab inflation. Server caps at 600s. A malicious client can bypass the 120s cap and report up to 600s per question, inflating their time analytics beyond what's physically possible.
+- **Expected:** Server should enforce the same 120s cap or validate against elapsed wall-clock time.
+- **Actual:** Server allows up to 600s per mutation: `Math.max(0, Math.min(600, Number(req.body.additionalTimeSeconds || 0)))`.
+
+---
+
+## 🟡 MEDIUM SEVERITY BUGS (Incorrect Behavior / Poor UX)
+
+### BUG-015 — Token Never Refreshes: `currentIdToken` Goes Stale After 1 Hour
+- **Severity:** 🟡 Medium
+- **Category:** Auth / Session
+- **Component:** [api.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/lib/api.ts#L61-L67)
+- **Summary:** Firebase ID tokens expire after 1 hour. The `apiFetch` function tries to refresh via `auth.currentUser.getIdToken()` but only catches errors silently. If the user's session expires during a 3.5-hour NEET PG mock, API calls fail with 401 and exam data may be lost.
+- **Steps to Reproduce:** Start a 3.5-hour full mock → After ~1 hour, all Save & Next calls may fail.
+- **Expected:** Automatic token refresh with retry, or proactive refresh before expiry.
+- **Actual:** `getIdToken()` failure is caught and ignored. The stale token is used, returning 401.
+
+### BUG-016 — Navigation Drawer `onNavigate('review')` Doesn't Pass Session ID
+- **Severity:** 🟡 Medium
+- **Category:** UX / Logic
+- **Component:** [App.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/App.tsx#L362-L369)
+- **Summary:** When navigating via the drawer, `setRoute({ view } as ActiveRoute)` is used for all views. For `view: 'review'`, this casts without a `sessionId`, which is required by the `ActiveRoute` type. TypeScript won't catch this due to `as ActiveRoute` cast.
+- **Expected:** Review navigation should use `navigateToLatestReview()` for all code paths (which it does handle via the `if` guard).
+- **Actual:** The `review` case is handled separately, but other invalid views like `exam` could also be cast unsafely. The `as ActiveRoute` bypasses type safety.
+
+### BUG-017 — Custom Test "Sectional" Default is `true` Even for 10-Question Drills
+- **Severity:** 🟡 Medium
+- **Category:** UX
+- **Component:** [CustomTestGeneratorModal.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/components/CustomTestGeneratorModal.tsx#L33)
+- **Summary:** `const [sectional, setSectional] = useState<boolean>(true)` defaults to true. When a student selects "10 Questions (Rapid Drill)", sectional is still checked. The server does prevent < 20Q from being sectional, but the UI shows conflicting state.
+- **Steps to Reproduce:** Open Custom Test → Select 10 Questions → "Time-locked 5-Sectional Mode" is checked.
+- **Expected:** Sectional should auto-disable and grey out for question counts < 20.
+- **Actual:** UI shows sectional as enabled, but server silently ignores it, causing confusion.
+
+### BUG-018 — `formatTimer` Drops Hours When Timer Shows 00:XX:XX
+- **Severity:** 🟡 Medium
+- **Category:** UI
+- **Component:** [ExamWorkspace.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/components/ExamWorkspace.tsx#L867-L877)
+- **Summary:** `formatTimer` omits hours when `hrs > 0` is false. During a 3.5-hour exam, when time remaining crosses from 1:00:00 to 59:59, the display format jumps from `01:00:00` to `59:59` — a confusing visual jump that could cause panic.
+- **Expected:** Consistent HH:MM:SS format throughout, or at least for exams > 60 min.
+- **Actual:** Format changes mid-exam from 3-segment to 2-segment.
+
+### BUG-019 — No Confirmation Dialog When Clicking "← Exit" During Active Exam
+- **Severity:** 🟡 Medium
+- **Category:** UX / Data Safety
+- **Component:** [ExamWorkspace.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/components/ExamWorkspace.tsx#L966-L972)
+- **Summary:** The "← Exit" button calls `onExitToDashboard` which navigates to dashboard. While progress IS saved server-side, students under exam stress may accidentally tap Exit thinking it pauses the exam. The timer keeps running.
+- **Steps to Reproduce:** During a full mock → Accidentally click "← Exit" → Timer continues → Panic.
+- **Expected:** Confirmation dialog: "Timer will continue running. Your progress is saved. Exit anyway?"
+- **Actual:** Instant navigation with no warning.
+
+### BUG-020 — `beforeunload` Event Not Registered — Browser Tab Close Loses Unsaved Pending Selection
+- **Severity:** 🟡 Medium
+- **Category:** Data Safety
+- **Component:** [ExamWorkspace.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/components/ExamWorkspace.tsx)
+- **Summary:** No `window.addEventListener('beforeunload', ...)` is registered. If a student selects option C (pending, not saved) and closes the tab, the pending selection is lost. In strict save mode, this is especially dangerous.
+- **Expected:** Register `beforeunload` with a warning: "You have unsaved exam changes. Are you sure you want to leave?"
+- **Actual:** Tab closes silently with no warning.
+
+### BUG-021 — Question Images Use External URLs Without Fallback — Broken Images in Exam
+- **Severity:** 🟡 Medium
+- **Category:** UX / Content
+- **Component:** [ExamWorkspace.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/components/ExamWorkspace.tsx#L1288-L1305)
+- **Summary:** Question images use `img.url` directly (external URLs). If the CDN is down or the image URL is broken, students see a broken image icon with no fallback message. For image-based questions (radiology, histopathology), this makes the question unanswerable.
+- **Expected:** `onError` handler showing "Image could not be loaded. Report this question." with question ID.
+- **Actual:** Broken image icon with no actionable feedback.
+
+### BUG-022 — `computeAndPersistSessionResult` Recomputes But Doesn't Update Existing Results
+- **Severity:** 🟡 Medium
+- **Category:** Data
+- **Component:** [repository.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/db/repository.ts#L639-L692)
+- **Summary:** When `existingResult.length > 0`, the function skips the insert entirely and returns freshly computed analytics without persisting updated data. If a student reviews results, the `computeAndPersistSessionResult` is called again via `GET /api/v1/results/:sessionId/analysis`, but only persists on first call.
+- **Expected:** Either always update, or return the already-persisted result without recomputing.
+- **Actual:** Recomputes analytics every time (wasting CPU) but only persists the first computation. Subsequent calls return computed but non-persisted results.
+
+### BUG-023 — Study Recommendations Deleted and Recreated on Every Session Result Computation
+- **Severity:** 🟡 Medium
+- **Category:** Data
+- **Component:** [repository.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/db/repository.ts#L712-L744)
+- **Summary:** `refreshStudyRecommendationsAndRevisions` deletes ALL recommendations for the user and recreates from the LATEST session only. Cross-session longitudinal recommendations are lost. After a small 10-Q custom test, the student's recommendations from their full 200Q mock are wiped.
+- **Steps to Reproduce:** Complete 200Q mock → View rich recommendations → Take 10Q custom drill → All recommendations now based on 10Q only.
+- **Expected:** Recommendations should aggregate across all sessions, not just the latest.
+- **Actual:** `DELETE FROM study_recommendations WHERE user_uid = ?` wipes everything before inserting from latest session.
+
+### BUG-024 — Mobile Navigation: Top Nav Links Hidden, Only Accessible via Hamburger Menu
+- **Severity:** 🟡 Medium
+- **Category:** UX / Mobile
+- **Component:** [App.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/App.tsx#L193)
+- **Summary:** `<nav className="hidden md:flex ...">` hides all navigation links on mobile. The only way to navigate is via the hamburger drawer. Many NEET PG aspirants study on mobile — the drawer adds an extra tap to every navigation.
+- **Expected:** Bottom tab navigation on mobile, or at minimum the most critical links (Dashboard, Mocks, Custom Test) visible.
+- **Actual:** All navigation hidden behind hamburger on screens < `md` (768px).
+
+### BUG-025 — "Import Test" Button Hidden on Small Screens
+- **Severity:** 🟡 Medium
+- **Category:** UX / Mobile
+- **Component:** [App.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/App.tsx#L258)
+- **Summary:** `className="hidden sm:inline-flex ..."` hides the Import Test button on screens < 640px. Mobile users cannot import mock test papers at all from the top bar.
+- **Expected:** Accessible from the navigation drawer at minimum.
+- **Actual:** Only accessible from drawer (via `onOpenImportTest` prop), which is non-obvious.
+
+### BUG-026 — Question Palette Not Keyboard Accessible
+- **Severity:** 🟡 Medium
+- **Category:** Accessibility
+- **Component:** [ExamWorkspace.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/components/ExamWorkspace.tsx)
+- **Summary:** The question palette (numbered grid of questions) uses buttons but there's no keyboard shortcut to jump to a specific question number. During a 200Q exam, keyboard users must click each palette button — no "Go to Q#" input.
+- **Expected:** "Jump to Question #" input field or keyboard shortcut (e.g., `/` then type number).
+- **Actual:** Only mouse/touch palette navigation available.
+
+### BUG-027 — Exam Workspace Scroll Position Not Reset When Navigating to Next Question
+- **Severity:** 🟡 Medium
+- **Category:** UX
+- **Component:** [ExamWorkspace.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/components/ExamWorkspace.tsx)
+- **Summary:** When clicking "Save & Next", the scroll position stays at the bottom where the action buttons are. The next question's stem is off-screen — the student must manually scroll up to read it.
+- **Expected:** `window.scrollTo(0, 0)` or scroll the question container to top on question change.
+- **Actual:** No scroll reset. Very frustrating during a timed 200Q exam.
+
+### BUG-028 — `answer_revisions` Don't Track `update_guess_or_elimination` Actions
+- **Severity:** 🟡 Medium
+- **Category:** Data / Analytics
+- **Component:** [repository.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/db/repository.ts#L1503-L1541)
+- **Summary:** When action is `update_guess_or_elimination`, the code returns early without creating answer revision records. This means if a student saves "A", then changes guess mode to tag it as a guess, the confidence change is not recorded in the revision trail.
+- **Expected:** Confidence changes should be tracked for analytics accuracy.
+- **Actual:** Only `savedOption` changes create revision records.
+
+---
+
+## 🔵 LOW SEVERITY BUGS (Minor Issues / Polish)
+
+### BUG-029 — `isSeededInMemoryFlag` Doesn't Survive Server Restart
+- **Severity:** 🔵 Low
+- **Category:** Performance
+- **Component:** [repository.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/db/repository.ts#L58)
+- **Summary:** `let isSeededInMemoryFlag = false;` is in-memory. After server restart, the first request triggers full seed check (reading all subjects, questions, configs). With a large question bank, this causes a slow first request.
+- **Expected:** Check a persistent seed version marker in the DB.
+- **Actual:** Every server restart triggers full seed validation on first request.
+
+### BUG-030 — `userProfile` Typed as `any` Throughout App.tsx
+- **Severity:** 🔵 Low
+- **Category:** Code Quality
+- **Component:** [App.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/App.tsx#L33)
+- **Summary:** `const [userProfile, setUserProfile] = useState<any>(null)` and `const [analyticsData, setAnalyticsData] = useState<any>(null)` lose all TypeScript safety. Any property access is unchecked.
+- **Expected:** Use proper TypeScript interfaces.
+- **Actual:** `any` types throughout main App component.
+
+### BUG-031 — `Dockerfile` and `render.yaml` Not Readable — Need Verification
+- **Severity:** 🔵 Low
+- **Category:** DevOps
+- **Component:** Dockerfile, render.yaml
+
+### BUG-032 — No Rate Limiting on Any API Endpoint
+- **Severity:** 🔵 Low (but escalates under attack)
+- **Category:** Security
+- **Component:** [server.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/server.ts)
+- **Summary:** No rate limiting middleware. A malicious user could spam `POST /api/v1/exams/start` to create thousands of sessions, or `POST /api/v1/admin/questions/import` to flood the question bank.
+- **Expected:** Rate limiting per user/IP on mutation endpoints.
+- **Actual:** No rate limiting at all.
+
+### BUG-033 — `15mb` JSON Body Limit Allows Large Import Payloads to OOM the Server
+- **Severity:** 🔵 Low
+- **Category:** Security / Performance
+- **Component:** [server.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/server.ts#L61)
+- **Summary:** `express.json({ limit: '15mb' })` allows very large request bodies. With no rate limiting, repeated 15MB POST requests can exhaust server memory.
+- **Expected:** Reasonable limit (1-2MB) for most endpoints; larger limit only for import endpoints.
+- **Actual:** Global 15MB limit on all endpoints.
+
+### BUG-034 — No CSRF Protection
+- **Severity:** 🔵 Low
+- **Category:** Security
+- **Component:** [server.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/server.ts)
+- **Summary:** No CSRF token verification. API endpoints accept requests from any origin. While Bearer tokens provide some protection, the demo mode `x-demo-user-uid` header is trivially forgeable from any page.
+
+### BUG-035 — No Pagination on `getAggregatedUserAnalytics`
+- **Severity:** 🔵 Low
+- **Category:** Performance
+- **Component:** [server.ts](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/server.ts#L433-L500)
+- **Summary:** Multiple analytics endpoints all call `getAggregatedUserAnalytics(uid)` which likely loads ALL sessions, results, and recommendations for the user in one query. For a student with 100+ mock exams, this could be very slow.
+
+### BUG-036 — Error Banner Retry Button Reloads Everything Including User Profile
+- **Severity:** 🔵 Low
+- **Category:** UX
+- **Component:** [App.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/App.tsx#L280-L284)
+- **Summary:** The "Retry" button in the error banner calls `loadDashboardAndUser()` which re-fetches both `/api/v1/auth/me` AND `/api/v1/analytics/overview`. If only analytics failed, the user profile is unnecessarily re-fetched.
+
+### BUG-037 — `getElapsedActiveSeconds` Returns Minimum 1 Second Even for Instant Actions
+- **Severity:** 🔵 Low
+- **Category:** Analytics Accuracy
+- **Component:** [ExamWorkspace.tsx](file:///Users/satyam/Documents/Development%20Log%20/WebMedia/Neet-PG-Crack/src/components/ExamWorkspace.tsx#L294-L299)
+- **Summary:** `Math.min(120, Math.max(1, rawSec))` ensures minimum 1s per action. If a student rapidly saves 5 questions in 3 seconds, each question logs 1s = 5s total. Fast keyboard users are penalized with inflated time stats.
+
+### BUG-038 — No Visual Indication of Current Section in Question Palette
+- **Severity:** 🔵 Low
+- **Category:** UX
+- **Component:** ExamWorkspace.tsx (palette section)
+- **Summary:** In sectional exams, the question palette shows all questions as a flat grid with color states, but doesn't visually separate or label which questions belong to which section. During a 200Q sectional exam, students can't quickly see section boundaries.
+
+---
+
+## 🟣 MISSING FEATURES (Critical for NEET PG Aspirants)
+
+### MF-001 — No Exam Pause/Resume Warning
+- **Summary:** When a student exits mid-exam, there's no clear indication that the timer CONTINUES running. Many aspirants expect "pause" functionality.
+
+### MF-002 — No Previous Year Question (PYQ) Tags Visible During Exam
+- **Summary:** Questions have `isPYQ` and `year` metadata, but these aren't shown during the exam or in the palette. NEET PG aspirants specifically want to know which questions are from previous years.
+
+### MF-003 — No "Report Question" Button During Exam
+- **Summary:** If a question has an error (wrong answer key, missing image, typo), there's no way for students to flag/report it during the exam.
+
+### MF-004 — No Spaced Repetition Integration in Main UI
+- **Summary:** The `revision_records` table exists with spaced repetition intervals, but there's no UI to show "Questions due for revision today" or trigger revision-based practice sessions.
+
+---
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| 🔴 Critical | 6 |
+| 🟠 High | 8 |
+| 🟡 Medium | 14 |
+| 🔵 Low | 10 |
+| 🟣 Missing Feature | 4 |
+| **Total** | **42** |
+
+> [!CAUTION]
+> **BUG-001 (Auth Bypass)** and **BUG-005/006 (No Admin Role Check + Self-Role-Escalation)** are **SHIP BLOCKERS**. Any user can become admin and export the entire question bank with correct answers. This must be fixed before any public deployment.
+
+> [!WARNING]
+> **BUG-002 (Double-Click Auto-Submit)** and **BUG-004 (No Option Validation)** can cause real data loss during exams. These should be fixed in the next sprint.
+
+> [!IMPORTANT]
+> **BUG-008 (effectiveOption null vs undefined)** is a subtle scoring bug that could silently clear saved answers. Add a regression test immediately.
