@@ -18,7 +18,8 @@ import { CustomTestGeneratorModal } from './components/CustomTestGeneratorModal.
 import { AdminQuestionBank } from './components/AdminQuestionBank.tsx';
 import { NavigationDrawer } from './components/NavigationDrawer.tsx';
 import { FullMockTestSeries } from './components/FullMockTestSeries.tsx';
-import { ImportMockPaperModal } from './components/ImportMockPaperModal.tsx';
+import { ImportMockPaperModal, type ImportModalTab } from './components/ImportMockPaperModal.tsx';
+import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 
 type ActiveRoute =
   | { view: 'dashboard' }
@@ -36,6 +37,13 @@ export default function App() {
   const [showCustomModal, setShowCustomModal] = useState<boolean>(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [importModalTab, setImportModalTab] = useState<ImportModalTab>('import');
+  const [mocksRefreshKey, setMocksRefreshKey] = useState<number>(0);
+
+  const openImportModal = (tab: ImportModalTab = 'import') => {
+    setImportModalTab(tab);
+    setShowImportModal(true);
+  };
 
   const loadDashboardAndUser = useCallback(async () => {
     try {
@@ -104,25 +112,45 @@ export default function App() {
     }
   };
 
+  const navigateToLatestReview = () => {
+    const latestId =
+      analyticsData?.latestAnalysis?.sessionId ||
+      analyticsData?.recentSessions?.find(
+        (s: any) => s.status === 'submitted' || s.status === 'auto_submitted'
+      )?.sessionId;
+    if (latestId) {
+      setError(null);
+      setRoute({ view: 'review', sessionId: latestId });
+    } else {
+      setError('Complete at least one examination session before opening Post-Exam Review.');
+      setRoute({ view: 'mocks' });
+    }
+  };
+
   // Full-screen NBEMS Examination Mode hides top marketing/dashboard chrome for zero distraction
   if (route.view === 'exam') {
     return (
-      <ExamWorkspace
-        sessionId={route.sessionId}
-        candidateName={userProfile?.displayName || 'Dr. Ananya Sharma'}
-        onExamSubmitted={async (submittedSessionId) => {
-          await loadDashboardAndUser();
-          setRoute({ view: 'review', sessionId: submittedSessionId });
-        }}
-        onExitToDashboard={async () => {
-          await loadDashboardAndUser();
-          setRoute({ view: 'dashboard' });
-        }}
-      />
+      <ErrorBoundary>
+        <ExamWorkspace
+          sessionId={route.sessionId}
+          candidateName={userProfile?.displayName || 'Dr. Ananya Sharma'}
+          onExamSubmitted={async (submittedSessionId) => {
+            await loadDashboardAndUser();
+            setMocksRefreshKey((k) => k + 1);
+            setRoute({ view: 'review', sessionId: submittedSessionId });
+          }}
+          onExitToDashboard={async () => {
+            await loadDashboardAndUser();
+            setMocksRefreshKey((k) => k + 1);
+            setRoute({ view: 'dashboard' });
+          }}
+        />
+      </ErrorBoundary>
     );
   }
 
   return (
+    <ErrorBoundary>
     <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-slate-900">
       {/* STRICT 3-ZONE TOP BAR CONTRACT (Frontend Design Constitution Section 2) */}
       <header className="flex items-center justify-between gap-6 px-6 py-3.5 bg-white border-b border-slate-200 sticky top-0 z-30">
@@ -188,8 +216,7 @@ export default function App() {
             href="#latest-review"
             onClick={(e) => {
               e.preventDefault();
-              const latestId = analyticsData?.latestAnalysis?.sessionId;
-              if (latestId) setRoute({ view: 'review', sessionId: latestId });
+              navigateToLatestReview();
             }}
             className={`hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 ${
               route.view === 'review' ? 'text-slate-900 font-semibold underline underline-offset-4' : ''
@@ -215,7 +242,7 @@ export default function App() {
         <div className="flex items-center gap-2.5 shrink-0">
           <button
             type="button"
-            onClick={() => setShowImportModal(true)}
+            onClick={() => openImportModal('import')}
             className="hidden sm:inline-flex items-center px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             + Import Test
@@ -266,9 +293,12 @@ export default function App() {
         ) : route.view === 'mocks' ? (
           <FullMockTestSeries
             onStartExam={(examId: string) => handleStartExamPreset(examId)}
+            onResumeSession={(sessionId: number) => setRoute({ view: 'exam', sessionId })}
             onReviewSession={(sessionId: number) => setRoute({ view: 'review', sessionId })}
-            onOpenImportModal={() => setShowImportModal(true)}
+            onOpenImportModal={() => openImportModal('import')}
+            onOpenPromptGuide={() => openImportModal('prompts')}
             onBackToDashboard={() => setRoute({ view: 'dashboard' })}
+            refreshKey={mocksRefreshKey}
           />
         ) : (
           <IntelligenceDashboard
@@ -277,7 +307,7 @@ export default function App() {
             onOpenCustomGenerator={() => setShowCustomModal(true)}
             onReviewSession={handleOpenOrReviewSession}
             onNavigateToMocks={() => setRoute({ view: 'mocks' })}
-            onOpenImportModal={() => setShowImportModal(true)}
+            onOpenImportModal={() => openImportModal('import')}
           />
         )}
       </div>
@@ -286,10 +316,10 @@ export default function App() {
       <footer className="border-t border-slate-200 bg-white px-6 py-4 mt-12">
         <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-4 text-xs text-slate-500">
           <span>
-            PG-PREP ARENA · NEET PG Examination & Performance Intelligence Platform
+            PG-PREP ARENA · NEET PG & INI-CET Examination & Performance Intelligence Platform
           </span>
           <span>
-            Independent Demonstration Question Bank · Configurable NBEMS CBT Workflow
+            Independent Demonstration Question Bank · NBEMS 2026 & AIIMS INI-CET CBT Protocols
           </span>
         </div>
       </footer>
@@ -300,11 +330,16 @@ export default function App() {
         onClose={() => setIsDrawerOpen(false)}
         activeView={route.view}
         onNavigate={(view) => {
+          if (view === 'review') {
+            navigateToLatestReview();
+            return;
+          }
+          setError(null);
           setRoute({ view } as ActiveRoute);
         }}
         onStartFullMock={() => handleStartExamPreset('neet-pg-full-mock-1')}
         onOpenCustomTest={() => setShowCustomModal(true)}
-        onOpenImportTest={() => setShowImportModal(true)}
+        onOpenImportTest={() => openImportModal('import')}
         userProfile={userProfile}
         analyticsOverview={analyticsData?.overview}
         onSignOutOrSwitch={handleGoogleLogin}
@@ -313,9 +348,11 @@ export default function App() {
       {/* Import Mock Paper Modal */}
       {showImportModal && (
         <ImportMockPaperModal
+          initialTab={importModalTab}
           onClose={() => setShowImportModal(false)}
-          onImportSuccess={(newPaper) => {
+          onImportSuccess={() => {
             setShowImportModal(false);
+            setMocksRefreshKey((k) => k + 1);
             setRoute({ view: 'mocks' });
           }}
         />
@@ -328,5 +365,6 @@ export default function App() {
         />
       )}
     </div>
+    </ErrorBoundary>
   );
 }

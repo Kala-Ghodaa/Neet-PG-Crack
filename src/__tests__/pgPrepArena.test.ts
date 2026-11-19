@@ -12,11 +12,11 @@ import {
 } from '../services/analyticsEngine.ts';
 import {
   DEFAULT_NEET_PG_FULL_MOCK_CONFIG,
-  NEET_PG_FULL_MOCK_1_CONFIG,
-  NEET_PG_FULL_MOCK_2_CONFIG,
-  INICET_SUPER_MOCK_3_CONFIG,
+  DEFAULT_INICET_FULL_MOCK_CONFIG,
+  BUILTIN_MOCK_CONFIGS,
   BUILTIN_MOCK_PAPERS_METADATA,
   SAMPLE_IMPORTABLE_MOCK_PAPER,
+  SAMPLE_IMPORTABLE_INICET_PAPER,
   NEET_PG_SUBJECTS,
   generateFull200QuestionBank,
 } from '../data/seedQuestions.ts';
@@ -24,16 +24,27 @@ import { StudentResponseRecord } from '../types/domain.ts';
 
 describe('PG-PREP ARENA — Core Examination, Guess Intelligence & Analytics Test Suite', () => {
   describe('1. Exam Configuration & 200-Question Bank Validation', () => {
-    it('validates the default 200-question 5-section NEET PG Full Mock configuration', () => {
-      const result = validateExamConfig(DEFAULT_NEET_PG_FULL_MOCK_CONFIG);
-      expect(result.valid).toBe(true);
-      expect(result.errors).toHaveLength(0);
+    it('validates the NBEMS 2026 NEET-PG (180 Q · 5×36 · 42m · +4/-1) and AIIMS INI-CET (200 Q · 4×50 · 45m · +1/-⅓) configs', () => {
+      const neetResult = validateExamConfig(DEFAULT_NEET_PG_FULL_MOCK_CONFIG);
+      expect(neetResult.valid).toBe(true);
+      expect(neetResult.errors).toHaveLength(0);
       expect(DEFAULT_NEET_PG_FULL_MOCK_CONFIG.pattern.sections).toHaveLength(5);
-      const totalQ = DEFAULT_NEET_PG_FULL_MOCK_CONFIG.pattern.sections.reduce(
-        (acc, s) => acc + s.questionCount,
-        0
-      );
-      expect(totalQ).toBe(200);
+      expect(DEFAULT_NEET_PG_FULL_MOCK_CONFIG.pattern.totalQuestions).toBe(180);
+      expect(DEFAULT_NEET_PG_FULL_MOCK_CONFIG.pattern.durationSeconds).toBe(12600);
+      expect(DEFAULT_NEET_PG_FULL_MOCK_CONFIG.markingScheme).toEqual({
+        correct: 4,
+        incorrect: -1,
+        unattempted: 0,
+      });
+
+      const inicetResult = validateExamConfig(DEFAULT_INICET_FULL_MOCK_CONFIG);
+      expect(inicetResult.valid).toBe(true);
+      expect(inicetResult.errors).toHaveLength(0);
+      expect(DEFAULT_INICET_FULL_MOCK_CONFIG.pattern.sections).toHaveLength(4);
+      expect(DEFAULT_INICET_FULL_MOCK_CONFIG.pattern.totalQuestions).toBe(200);
+      expect(DEFAULT_INICET_FULL_MOCK_CONFIG.pattern.durationSeconds).toBe(10800);
+      expect(DEFAULT_INICET_FULL_MOCK_CONFIG.markingScheme.correct).toBe(1);
+      expect(DEFAULT_INICET_FULL_MOCK_CONFIG.markingScheme.incorrect).toBeCloseTo(-1 / 3, 4);
     });
 
     it('rejects sectional exam configs where section counts do not sum to totalQuestions', () => {
@@ -41,7 +52,7 @@ describe('PG-PREP ARENA — Core Examination, Guess Intelligence & Analytics Tes
         ...DEFAULT_NEET_PG_FULL_MOCK_CONFIG,
         pattern: {
           ...DEFAULT_NEET_PG_FULL_MOCK_CONFIG.pattern,
-          totalQuestions: 100, // mismatch with 200
+          totalQuestions: 100, // mismatch with 180
         },
       };
       const result = validateExamConfig(brokenConfig);
@@ -488,67 +499,171 @@ describe('PG-PREP ARENA — Core Examination, Guess Intelligence & Analytics Tes
     });
   });
 
-  describe('5. Full Mock Test Series (2-3 Papers with Dates) & Import Package Engine', () => {
-    it('provides exactly 3 built-in mock papers with required dates, 200 questions, and 5 sections', () => {
-      expect(BUILTIN_MOCK_PAPERS_METADATA).toHaveLength(3);
+  describe('5. Full Mock Test Series (10 NEET-PG 2026 + 10 INI-CET) & Import Packages', () => {
+    it('provides exactly 20 built-in full mock papers: 10 NEET-PG 2026 (180 Qs, 5×36, +4/-1) and 10 INI-CET (200 Qs, 4×50, +1/-⅓)', () => {
+      expect(BUILTIN_MOCK_PAPERS_METADATA).toHaveLength(20);
+      expect(BUILTIN_MOCK_CONFIGS).toHaveLength(20);
 
-      const paper1 = BUILTIN_MOCK_PAPERS_METADATA.find((p) => p.id === 'neet-pg-full-mock-1');
-      expect(paper1).toBeDefined();
-      expect(paper1?.date).toBe('Oct 18, 2026');
-      expect(paper1?.targetExam).toBe('NEET-PG');
-      expect(paper1?.totalQuestions).toBe(200);
-      expect(paper1?.durationMinutes).toBe(210);
-      expect(paper1?.sectionCount).toBe(5);
+      const neetPapers = BUILTIN_MOCK_PAPERS_METADATA.filter((p) => p.targetExam === 'NEET-PG');
+      const inicetPapers = BUILTIN_MOCK_PAPERS_METADATA.filter((p) => p.targetExam === 'INI-CET');
+      expect(neetPapers).toHaveLength(10);
+      expect(inicetPapers).toHaveLength(10);
 
-      const paper2 = BUILTIN_MOCK_PAPERS_METADATA.find((p) => p.id === 'neet-pg-full-mock-2');
-      expect(paper2).toBeDefined();
-      expect(paper2?.date).toBe('Nov 02, 2026');
-      expect(paper2?.targetExam).toBe('NEET-PG');
-      expect(paper2?.totalQuestions).toBe(200);
+      for (const p of neetPapers) {
+        expect(p.totalQuestions).toBe(180);
+        expect(p.durationMinutes).toBe(210);
+        expect(p.sectionCount).toBe(5);
+        expect(p.questionsPerSection).toBe(36);
+        expect(p.sectionDurationMinutes).toBe(42);
+        expect(p.maxMarks).toBe(720);
+        expect(p.markingScheme).toEqual({ correct: 4, incorrect: -1, unattempted: 0 });
+      }
 
-      const paper3 = BUILTIN_MOCK_PAPERS_METADATA.find((p) => p.id === 'inicet-super-mock-3');
-      expect(paper3).toBeDefined();
-      expect(paper3?.date).toBe('Nov 08, 2026');
-      expect(paper3?.targetExam).toBe('INI-CET');
-      expect(paper3?.totalQuestions).toBe(200);
+      for (const p of inicetPapers) {
+        expect(p.totalQuestions).toBe(200);
+        expect(p.durationMinutes).toBe(180);
+        expect(p.sectionCount).toBe(4);
+        expect(p.questionsPerSection).toBe(50);
+        expect(p.sectionDurationMinutes).toBe(45);
+        expect(p.maxMarks).toBe(200);
+        expect(p.markingScheme.correct).toBe(1);
+        expect(p.markingScheme.incorrect).toBeCloseTo(-1 / 3, 4);
+      }
     });
 
-    it('validates the underlying ExamConfigs for all 3 full mock papers', () => {
-      const v1 = validateExamConfig(NEET_PG_FULL_MOCK_1_CONFIG);
-      expect(v1.valid).toBe(true);
-      expect(v1.errors).toHaveLength(0);
-
-      const v2 = validateExamConfig(NEET_PG_FULL_MOCK_2_CONFIG);
-      expect(v2.valid).toBe(true);
-      expect(v2.errors).toHaveLength(0);
-
-      const v3 = validateExamConfig(INICET_SUPER_MOCK_3_CONFIG);
-      expect(v3.valid).toBe(true);
-      expect(v3.errors).toHaveLength(0);
+    it('validates the underlying ExamConfigs for all 20 built-in full mock papers', () => {
+      for (const cfg of BUILTIN_MOCK_CONFIGS) {
+        const res = validateExamConfig(cfg);
+        expect(res.valid).toBe(true);
+        expect(res.errors).toHaveLength(0);
+      }
     });
 
-    it('validates the structure and questions of the sample importable test package', () => {
-      expect(SAMPLE_IMPORTABLE_MOCK_PAPER.examId).toBe('neet-pg-grand-mock-4');
-      expect(SAMPLE_IMPORTABLE_MOCK_PAPER.date).toBe('Nov 15, 2026');
+    it('computes clean 2-decimal fractional INI-CET scores (+1 / -1/3)', () => {
+      const inicetScheme = { correct: 1, incorrect: -1 / 3, unattempted: 0 };
+      const items: EvaluatedQuestionInput[] = [
+        {
+          testQuestionId: 1,
+          questionId: 1,
+          questionCode: 'INI-1',
+          subjectSlug: 'pharmacology',
+          subjectName: 'Pharmacology',
+          systemName: 'CVS',
+          topicName: 'ARNI',
+          subtopicName: 'Neprilysin',
+          difficulty: 'hard',
+          correctOption: 'B',
+          savedOption: 'B',
+          isMarkedForReview: false,
+          confidence: 'sure',
+          secondGuessOption: null,
+          eliminatedOptions: [],
+          timeSpentSeconds: 30,
+          visitCount: 1,
+        },
+        {
+          testQuestionId: 2,
+          questionId: 2,
+          questionCode: 'INI-2',
+          subjectSlug: 'pathology',
+          subjectName: 'Pathology',
+          systemName: 'Hematology',
+          topicName: 'PV',
+          subtopicName: 'JAK2',
+          difficulty: 'medium',
+          correctOption: 'B',
+          savedOption: 'A',
+          isMarkedForReview: false,
+          confidence: 'main_guess',
+          secondGuessOption: 'B',
+          eliminatedOptions: ['C', 'D'],
+          timeSpentSeconds: 45,
+          visitCount: 1,
+        },
+      ];
+      const analytics = calculateCompleteExamAnalytics(items, [], inicetScheme);
+      // +1 - 0.3333... = 0.67
+      expect(analytics.score).toBe(0.67);
+      expect(analytics.maxMarks).toBe(2);
+      expect(analytics.negativeMarks).toBe(0.33);
+    });
+
+    it('validates both NEET-PG 2026 and INI-CET sample importable mock packages', () => {
       expect(SAMPLE_IMPORTABLE_MOCK_PAPER.targetExam).toBe('NEET-PG');
       expect(SAMPLE_IMPORTABLE_MOCK_PAPER.durationMinutes).toBe(210);
-      expect(SAMPLE_IMPORTABLE_MOCK_PAPER.sectional).toBe(true);
       expect(SAMPLE_IMPORTABLE_MOCK_PAPER.sections).toHaveLength(5);
+      expect(
+        SAMPLE_IMPORTABLE_MOCK_PAPER.sections.reduce((acc, s) => acc + s.questionCount, 0)
+      ).toBe(180);
+      expect(validateQuestionBankImportPayload(SAMPLE_IMPORTABLE_MOCK_PAPER.questions as any).valid).toBe(true);
 
-      const sumQuestions = SAMPLE_IMPORTABLE_MOCK_PAPER.sections.reduce(
-        (acc, s) => acc + s.questionCount,
-        0
-      );
-      expect(sumQuestions).toBe(200);
+      expect(SAMPLE_IMPORTABLE_INICET_PAPER.targetExam).toBe('INI-CET');
+      expect(SAMPLE_IMPORTABLE_INICET_PAPER.durationMinutes).toBe(180);
+      expect(SAMPLE_IMPORTABLE_INICET_PAPER.sections).toHaveLength(4);
+      expect(
+        SAMPLE_IMPORTABLE_INICET_PAPER.sections.reduce((acc, s) => acc + s.questionCount, 0)
+      ).toBe(200);
+      expect(validateQuestionBankImportPayload(SAMPLE_IMPORTABLE_INICET_PAPER.questions as any).valid).toBe(true);
+    });
+  });
 
-      // Embedded questions validation
-      expect(SAMPLE_IMPORTABLE_MOCK_PAPER.questions.length).toBeGreaterThanOrEqual(1);
-      const q1 = SAMPLE_IMPORTABLE_MOCK_PAPER.questions[0];
-      expect(q1.questionId).toBeDefined();
-      expect(q1.question.text).toBeTruthy();
-      expect(q1.options).toHaveLength(4);
-      expect(q1.correctAnswer).toBe('B');
-      expect(q1.explanation?.summary).toBeTruthy();
+  describe('6. Knowledge Heatmap Mastery Tiers & Subject Slug Resolution', () => {
+    it('resolves all 19 NEET PG subject names, codes, and slugs accurately (including OBGY)', async () => {
+      const { resolveSubjectSlug } = await import('../components/KnowledgeHeatmap.tsx');
+      for (const s of NEET_PG_SUBJECTS) {
+        expect(resolveSubjectSlug(s.name)).toBe(s.slug);
+        expect(resolveSubjectSlug(s.code)).toBe(s.slug);
+        expect(resolveSubjectSlug(s.slug)).toBe(s.slug);
+      }
+      expect(resolveSubjectSlug('Obstetrics and Gynecology')).toBe('obstetrics-gynecology');
+      expect(resolveSubjectSlug('Community Medicine (PSM)')).toBe('community-medicine');
+      expect(resolveSubjectSlug('Internal Medicine')).toBe('medicine');
+    });
+
+    it('classifies mastery tiers accurately across all clinical accuracy thresholds', async () => {
+      const { classifyMasteryTier } = await import('../components/KnowledgeHeatmap.tsx');
+      expect(classifyMasteryTier(0, 0)).toBe('unattempted');
+      expect(classifyMasteryTier(10, 82)).toBe('mastered');
+      expect(classifyMasteryTier(10, 75)).toBe('mastered');
+      expect(classifyMasteryTier(10, 68)).toBe('proficient');
+      expect(classifyMasteryTier(10, 52)).toBe('developing');
+      expect(classifyMasteryTier(10, 35)).toBe('critical');
+    });
+
+    it('builds a complete 19-subject heatmap dataset for both cumulative and latest scopes', async () => {
+      const { buildHeatmapSubjects } = await import('../components/KnowledgeHeatmap.tsx');
+      const mockAnalytics = {
+        latestAnalysis: {
+          subjectBreakdown: [
+            {
+              subjectSlug: 'pathology',
+              subjectName: 'Pathology',
+              totalQuestions: 15,
+              attempted: 12,
+              correct: 10,
+              incorrect: 2,
+              unattempted: 3,
+              accuracy: 83.3,
+              attemptRate: 80,
+              netScore: 38,
+              maxMarks: 60,
+              avgTimeSeconds: 42,
+              guessPercentage: 16.7,
+              sureAccuracy: 90,
+              mainGuessAccuracy: 50,
+            },
+          ],
+        },
+      };
+
+      const rows = buildHeatmapSubjects(mockAnalytics, 'latest');
+      expect(rows).toHaveLength(19);
+      const pathRow = rows.find((r) => r.subjectSlug === 'pathology');
+      expect(pathRow?.masteryTier).toBe('mastered');
+      expect(pathRow?.accuracy).toBe(83.3);
+      const dermRow = rows.find((r) => r.subjectSlug === 'dermatology');
+      expect(dermRow?.masteryTier).toBe('unattempted');
+      expect(dermRow?.attempted).toBe(0);
     });
   });
 });

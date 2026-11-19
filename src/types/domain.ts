@@ -249,6 +249,13 @@ export interface MockPaperSummary {
   totalQuestions: number;
   durationMinutes: number;
   sectionCount: number;
+  questionsPerSection?: number;
+  sectionDurationMinutes?: number;
+  markingScheme?: {
+    correct: number;
+    incorrect: number;
+    unattempted: number;
+  };
   tag: string;
   description: string;
   isUserImported?: boolean;
@@ -269,6 +276,11 @@ export interface ImportTestPackagePayload {
   tag?: string;
   description?: string;
   sectional: boolean;
+  markingScheme?: {
+    correct: number;
+    incorrect: number;
+    unattempted: number;
+  };
   sections?: Array<{
     sectionId: string;
     name: string;

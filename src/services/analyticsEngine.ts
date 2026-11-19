@@ -84,6 +84,10 @@ function computeMedian(values: number[]): number {
     : Number(((sorted[mid - 1] + sorted[mid]) / 2).toFixed(1));
 }
 
+function roundMarks(val: number): number {
+  return Number(val.toFixed(2));
+}
+
 export interface FullExamAnalyticsOutput {
   totalQuestions: number;
   attemptedCount: number;
@@ -357,8 +361,10 @@ export function calculateCompleteExamAnalytics(
     }
   }
 
-  const maxMarks = totalQuestions * scheme.correct;
-  const score = positiveMarks - negativeMarks;
+  const maxMarks = roundMarks(totalQuestions * scheme.correct);
+  const roundedPositiveMarks = roundMarks(positiveMarks);
+  const roundedNegativeMarks = roundMarks(negativeMarks);
+  const score = roundMarks(positiveMarks - negativeMarks);
   const percentageScore = maxMarks > 0 ? Number(((score / maxMarks) * 100).toFixed(1)) : 0;
   const accuracy =
     attemptedCount > 0 ? Number(((correctCount / attemptedCount) * 100).toFixed(1)) : 0;
@@ -403,10 +409,10 @@ export function calculateCompleteExamAnalytics(
       unattempted: s.unattempted,
       accuracy: subjAcc,
       attemptRate: subjAtt,
-      marksEarned: s.marksEarned,
-      marksLost: s.marksLost,
-      netScore: s.marksEarned - s.marksLost,
-      maxMarks: s.totalQuestions * scheme.correct,
+      marksEarned: roundMarks(s.marksEarned),
+      marksLost: roundMarks(s.marksLost),
+      netScore: roundMarks(s.marksEarned - s.marksLost),
+      maxMarks: roundMarks(s.totalQuestions * scheme.correct),
       avgTimeSeconds: subjAvgTime,
       medianTimeSeconds: computeMedian(s.times),
       guessPercentage: guessPct,
@@ -500,7 +506,7 @@ export function calculateCompleteExamAnalytics(
       attemptRate: tAtt,
       avgTimeSeconds: tAvgTime,
       guessFrequency: guessFreq,
-      negativeMarksImpact: t.negativeMarks,
+      negativeMarksImpact: roundMarks(t.negativeMarks),
       quadrant,
       knowledgeGapScore,
       knowledgeGapReasons: reasons,
@@ -548,9 +554,11 @@ export function calculateCompleteExamAnalytics(
     );
   }
   if (mainGuessCount > 0) {
-    const netGuessMarks = marksEarnedFromMainGuesses - negativeMarksFromMainGuesses;
+    const earnedMg = roundMarks(marksEarnedFromMainGuesses);
+    const lostMg = roundMarks(negativeMarksFromMainGuesses);
+    const netGuessMarks = roundMarks(marksEarnedFromMainGuesses - negativeMarksFromMainGuesses);
     guessInsights.push(
-      `Main Guesses generated +${marksEarnedFromMainGuesses} marks and cost -${negativeMarksFromMainGuesses} negative marks (Net impact: ${
+      `Main Guesses generated +${earnedMg} marks and cost -${lostMg} negative marks (Net impact: ${
         netGuessMarks >= 0 ? '+' : ''
       }${netGuessMarks} marks across n=${mainGuessCount} questions).`
     );
@@ -607,8 +615,9 @@ export function calculateCompleteExamAnalytics(
 
   const questionsChangedCount = incorrectToCorrect + correctToIncorrect + incorrectToIncorrect;
   const swingValue = scheme.correct + Math.abs(scheme.incorrect);
-  const netMarksImpactFromChanges =
-    incorrectToCorrect * swingValue - correctToIncorrect * swingValue;
+  const netMarksImpactFromChanges = roundMarks(
+    incorrectToCorrect * swingValue - correctToIncorrect * swingValue
+  );
 
   const changeInsights: string[] = [];
   if (questionsChangedCount >= 2) {
@@ -634,8 +643,8 @@ export function calculateCompleteExamAnalytics(
     percentageScore,
     accuracy,
     attemptRate,
-    positiveMarks,
-    negativeMarks,
+    positiveMarks: roundedPositiveMarks,
+    negativeMarks: roundedNegativeMarks,
     totalTimeSeconds,
     avgTimeSeconds,
     medianTimeSeconds,
@@ -652,9 +661,9 @@ export function calculateCompleteExamAnalytics(
       mainGuessCorrect,
       mainGuessIncorrect,
       mainGuessAccuracy,
-      marksEarnedFromMainGuesses,
-      negativeMarksFromMainGuesses,
-      netMarksFromMainGuesses: marksEarnedFromMainGuesses - negativeMarksFromMainGuesses,
+      marksEarnedFromMainGuesses: roundMarks(marksEarnedFromMainGuesses),
+      negativeMarksFromMainGuesses: roundMarks(negativeMarksFromMainGuesses),
+      netMarksFromMainGuesses: roundMarks(marksEarnedFromMainGuesses - negativeMarksFromMainGuesses),
       guessingPercentage,
       guessIntentUnattemptedCount,
       secondGuessCount,
@@ -670,7 +679,7 @@ export function calculateCompleteExamAnalytics(
         correctAnswerEliminatedByMistakeCount,
         correctAnswerSurvivalRate,
         eliminationEfficiency,
-        marksLostWhenSecondGuessWasCorrect,
+        marksLostWhenSecondGuessWasCorrect: roundMarks(marksLostWhenSecondGuessWasCorrect),
       },
       insights: guessInsights,
     },

@@ -196,6 +196,21 @@ export const AdminQuestionBank: React.FC = () => {
   const handleSaveQuestionForm = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const existingImages = Array.isArray(editingQuestion?.images)
+        ? editingQuestion.images
+        : [];
+      const existingTables = Array.isArray(editingQuestion?.tables)
+        ? editingQuestion.tables
+        : Array.isArray(editingQuestion?.tablesJson)
+        ? editingQuestion.tablesJson
+        : [];
+      const existingOptExps = editingQuestion?.explanation?.optionExplanations || {};
+      const existingLearningPoints = Array.isArray(
+        editingQuestion?.explanation?.learningPoints
+      )
+        ? editingQuestion.explanation.learningPoints
+        : [];
+
       const payload = {
         id: editingQuestion?.id,
         subjectId: formSubject,
@@ -204,12 +219,13 @@ export const AdminQuestionBank: React.FC = () => {
         topicId: formTopic.toLowerCase().replace(/\s+/g, '-'),
         topicName: formTopic,
         subtopic: formSubtopic,
+        questionType: editingQuestion?.questionType || 'single_best_answer',
         difficulty: formDifficulty,
         question: {
           text: formQuestionText,
           clinicalVignette: formVignette || null,
-          images: [],
-          tables: [],
+          images: existingImages,
+          tables: existingTables,
         },
         options: [
           { id: 'A', text: formOptA },
@@ -222,14 +238,29 @@ export const AdminQuestionBank: React.FC = () => {
           summary: formSummary,
           details: formDetails,
           optionExplanations: {
-            A: '',
-            B: '',
-            C: '',
-            D: '',
+            A: existingOptExps.A || '',
+            B: existingOptExps.B || '',
+            C: existingOptExps.C || '',
+            D: existingOptExps.D || '',
           },
-          learningPoints: [],
+          learningPoints: existingLearningPoints,
         },
-        status: 'published',
+        ...(editingQuestion
+          ? {
+              metadata: {
+                isPYQ: Boolean(editingQuestion.isPyq),
+                year: editingQuestion.pyqYear ?? null,
+                source: editingQuestion.source || 'Admin Authored',
+                references: Array.isArray(editingQuestion.referencesJson)
+                  ? editingQuestion.referencesJson
+                  : [],
+                tags: Array.isArray(editingQuestion.tagsJson)
+                  ? editingQuestion.tagsJson
+                  : [],
+              },
+            }
+          : {}),
+        status: editingQuestion?.status || 'published',
       };
 
       if (editingQuestion?.id) {
@@ -1068,7 +1099,7 @@ export const AdminQuestionBank: React.FC = () => {
                     <td className="py-2 px-4 font-mono font-bold text-slate-900">subjectId</td>
                     <td className="py-2 px-3 font-mono text-slate-600">enum string</td>
                     <td className="py-2 px-3 font-semibold text-emerald-700">Yes</td>
-                    <td className="py-2 px-4 text-slate-700">One of 19 standard NEET-PG slugs (e.g. general_medicine, pathology)</td>
+                    <td className="py-2 px-4 text-slate-700">One of 19 standard NEET-PG slugs (e.g. medicine, pathology)</td>
                   </tr>
                   <tr className="hover:bg-slate-50">
                     <td className="py-2 px-4 font-mono font-bold text-slate-900">question.text</td>

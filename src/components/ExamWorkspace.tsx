@@ -52,10 +52,12 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
   const [secondGuessOption, setSecondGuessOption] = useState<string | null>(null);
   const [eliminatedOptions, setEliminatedOptions] = useState<string[]>([]);
 
-  // Clear Response confirmation modal when Second Guess or Eliminated options exist
+  // Clear Response / Submit / Lock Section confirmation modals
   const [showClearModal, setShowClearModal] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [showLockSectionModal, setShowLockSectionModal] = useState(false);
   const [showMobilePalette, setShowMobilePalette] = useState(false);
+  const [isSubmittingOrLocking, setIsSubmittingOrLocking] = useState(false);
 
   // Timers & Sync state
   const [sectionRemainingSec, setSectionRemainingSec] = useState<number>(2520);
@@ -66,6 +68,29 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
 
   const questionEntryTimestampRef = useRef<number>(Date.now());
   const isTransitioningRef = useRef<boolean>(false);
+  const clockOffsetMsRef = useRef<number>(0);
+  const overallDeadlineMsRef = useRef<number | null>(null);
+  const sectionDeadlineMsRef = useRef<number | null>(null);
+  const warnedMilestonesRef = useRef<Set<string>>(new Set());
+  const statusBannerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showTransientBanner = useCallback((message: string, durationMs = 3500) => {
+    setStatusBanner(message);
+    if (statusBannerTimeoutRef.current) {
+      clearTimeout(statusBannerTimeoutRef.current);
+    }
+    if (durationMs > 0) {
+      statusBannerTimeoutRef.current = setTimeout(() => {
+        setStatusBanner(null);
+      }, durationMs);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (statusBannerTimeoutRef.current) clearTimeout(statusBannerTimeoutRef.current);
+    };
+  }, []);
 
   const syncLocalQuestionControls = useCallback((qItem: any) => {
     if (!qItem) return;
@@ -99,21 +124,36 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
 
       const initialIdx = Math.min(
         Math.max(0, data.session.currentQuestionIndex || 0),
-        data.questions.length - 1
+        Math.max(0, data.questions.length - 1)
       );
       setCurrentIdx(initialIdx);
       syncLocalQuestionControls(data.questions[initialIdx]);
 
-      // Calculate remaining server-authoritative timers
+      // Establish server-authoritative clock offset & exact deadlines (drift-proof across tab throttling)
       const serverNow = new Date(data.session.serverTimeNow).getTime();
+      const clientNow = Date.now();
+      clockOffsetMsRef.current = serverNow - clientNow;
+
       const overallDeadline = new Date(data.session.overallDeadlineAt).getTime();
-      setOverallRemainingSec(Math.max(0, Math.floor((overallDeadline - serverNow) / 1000)));
+      overallDeadlineMsRef.current = overallDeadline;
+      setOverallRemainingSec(Math.max(0, Math.ceil((overallDeadline - serverNow) / 1000)));
 
       const activeSec = data.sections[data.session.activeSectionIndex];
-      if (activeSec && activeSec.deadlineAt) {
-        const secDeadline = new Date(activeSec.deadlineAt).getTime();
-        setSectionRemainingSec(Math.max(0, Math.floor((secDeadline - serverNow) / 1000)));
+      const sessionIsSectional = Boolean(data.session?.config?.pattern?.sectional);
+      if (sessionIsSectional && activeSec && activeSec.deadlineAt) {
+        const secDeadline = Math.min(
+          new Date(activeSec.deadlineAt).getTime(),
+          overallDeadline
+        );
+        sectionDeadlineMsRef.current = secDeadline;
+        setSectionRemainingSec(Math.max(0, Math.ceil((secDeadline - serverNow) / 1000)));
+      } else {
+        sectionDeadlineMsRef.current = null;
+        setSectionRemainingSec(Math.max(0, Math.ceil((overallDeadline - serverNow) / 1000)));
       }
+
+      warnedMilestonesRef.current = new Set();
+      setSyncState(getOfflineQueue().length > 0 ? 'offline_queued' : 'synced');
       setError(null);
     } catch (err: any) {
       setError(err.message || 'Failed to load examination session');
@@ -125,6 +165,22 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
   useEffect(() => {
     loadSessionState();
   }, [loadSessionState]);
+
+  // Auto-flush offline queue as soon as network connectivity returns
+  useEffect(() => {
+    const onOnline = async () => {
+      if (getOfflineQueue().length > 0) {
+        setSyncState('syncing');
+        const flushed = await flushOfflineMutations();
+        setSyncState(getOfflineQueue().length > 0 ? 'offline_queued' : 'synced');
+        if (flushed > 0) {
+          showTransientBanner(`Connection restored — synced ${flushed} queued response(s).`, 3000);
+        }
+      }
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [showTransientBanner]);
 
   // Audible beep helper using Web Audio API (no external audio file dependency)
   const triggerAudibleWarning = useCallback(() => {
@@ -145,34 +201,86 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
     }
   }, [soundAlertsEnabled]);
 
-  // 1-second countdown interval
+  const latestTimerActionsRef = useRef<{
+    autoLockSection: () => void;
+    autoSubmitExam: () => void;
+  }>({
+    autoLockSection: () => {},
+    autoSubmitExam: () => {},
+  });
+
+  // Drift-proof server-deadline countdown (ticks every 500ms + syncs on tab visibility/focus)
   useEffect(() => {
     if (!sessionData || sessionData.status !== 'in_progress') return;
+    const sectionalEnabled = Boolean(sessionData?.config?.pattern?.sectional);
+    const activeSecIdx = sessionData?.activeSectionIndex ?? 0;
 
-    const timer = setInterval(() => {
-      setSectionRemainingSec((prev) => {
-        if (prev === 300 || prev === 60) {
+    const evaluateTimers = () => {
+      const adjustedNow = Date.now() + clockOffsetMsRef.current;
+
+      if (overallDeadlineMsRef.current !== null) {
+        const remOverall = Math.max(
+          0,
+          Math.ceil((overallDeadlineMsRef.current - adjustedNow) / 1000)
+        );
+        setOverallRemainingSec(remOverall);
+
+        if (remOverall <= 300 && remOverall > 60 && !warnedMilestonesRef.current.has('overall-300')) {
+          warnedMilestonesRef.current.add('overall-300');
           triggerAudibleWarning();
         }
-        if (prev <= 1 && !isTransitioningRef.current) {
-          isTransitioningRef.current = true;
-          handleSectionExpiryAutoLock();
-          return 0;
+        if (remOverall <= 60 && remOverall > 0 && !warnedMilestonesRef.current.has('overall-60')) {
+          warnedMilestonesRef.current.add('overall-60');
+          triggerAudibleWarning();
         }
-        return Math.max(0, prev - 1);
-      });
 
-      setOverallRemainingSec((prev) => {
-        if (prev <= 1 && !isTransitioningRef.current) {
+        if (remOverall <= 0 && !isTransitioningRef.current) {
           isTransitioningRef.current = true;
-          handleFinalExamSubmit(true);
-          return 0;
+          latestTimerActionsRef.current.autoSubmitExam();
+          return;
         }
-        return Math.max(0, prev - 1);
-      });
-    }, 1000);
+      }
 
-    return () => clearInterval(timer);
+      if (sectionalEnabled && sectionDeadlineMsRef.current !== null) {
+        const remSec = Math.max(
+          0,
+          Math.ceil((sectionDeadlineMsRef.current - adjustedNow) / 1000)
+        );
+        setSectionRemainingSec(remSec);
+
+        const warn5Key = `sec-${activeSecIdx}-300`;
+        const warn1Key = `sec-${activeSecIdx}-60`;
+        if (remSec <= 300 && remSec > 60 && !warnedMilestonesRef.current.has(warn5Key)) {
+          warnedMilestonesRef.current.add(warn5Key);
+          triggerAudibleWarning();
+        }
+        if (remSec <= 60 && remSec > 0 && !warnedMilestonesRef.current.has(warn1Key)) {
+          warnedMilestonesRef.current.add(warn1Key);
+          triggerAudibleWarning();
+        }
+
+        if (remSec <= 0 && !isTransitioningRef.current) {
+          isTransitioningRef.current = true;
+          latestTimerActionsRef.current.autoLockSection();
+        }
+      }
+    };
+
+    evaluateTimers();
+    const timer = setInterval(evaluateTimers, 500);
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        evaluateTimers();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+    };
   }, [sessionData, triggerAudibleWarning]);
 
   const currentQuestion = questions[currentIdx];
@@ -318,6 +426,12 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
     if (typeof targetIdx === 'number' && targetIdx !== currentIdx) {
       setCurrentIdx(targetIdx);
       syncLocalQuestionControls(updatedQuestions[targetIdx]);
+    } else if (
+      typeof targetIdx === 'number' &&
+      targetIdx === currentIdx &&
+      action === 'navigate_away'
+    ) {
+      syncLocalQuestionControls(updatedQuestions[currentIdx]);
     }
 
     const payload = {
@@ -355,17 +469,22 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
   };
 
   // Find indices belonging to active section (if sectional mode is on)
-  const getNextValidQuestionIndex = (fromIdx: number, direction: 1 | -1): number => {
+  const getNextValidQuestionIndex = (
+    fromIdx: number,
+    direction: 1 | -1,
+    silentOnBoundary = false
+  ): number => {
     const candidate = fromIdx + direction;
     if (candidate < 0 || candidate >= questions.length) return fromIdx;
     const targetQ = questions[candidate];
     if (isSectional && targetQ.sectionIndex !== activeSectionIndex) {
       const targetSec = sections[targetQ.sectionIndex];
       if (!targetSec || !targetSec.allowReturnAfterLock) {
-        setStatusBanner(
-          `Navigation restricted to active ${sections[activeSectionIndex]?.name || 'Section'}. Complete or lock current section to advance.`
-        );
-        setTimeout(() => setStatusBanner(null), 3500);
+        if (!silentOnBoundary) {
+          showTransientBanner(
+            `Navigation restricted to active ${sections[activeSectionIndex]?.name || 'Section'}. Complete or lock current section to advance.`
+          );
+        }
         return fromIdx;
       }
     }
@@ -373,17 +492,38 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
   };
 
   const handleSaveAndNext = () => {
-    const nextIdx = getNextValidQuestionIndex(currentIdx, 1);
+    const nextIdx = getNextValidQuestionIndex(currentIdx, 1, true);
     persistAction('save_and_next', nextIdx);
+    if (nextIdx === currentIdx && currentQuestion) {
+      if (isSectional && activeSectionIndex < sections.length - 1) {
+        showTransientBanner(
+          `Saved Q${currentQuestion.questionOrder}. Last question of ${sections[activeSectionIndex]?.name || 'active section'} — review or click "Lock & Next Section →".`
+        );
+      } else {
+        showTransientBanner(
+          `Saved Q${currentQuestion.questionOrder}. You are on the final question — click "Submit" when ready.`
+        );
+      }
+    }
   };
 
   const handleSaveAndMarkForReview = () => {
     persistAction('save_and_mark_review', currentIdx);
+    if (currentQuestion) {
+      showTransientBanner(`Q${currentQuestion.questionOrder} saved and marked for review.`, 2200);
+    }
   };
 
   const handleMarkForReviewAndNext = () => {
-    const nextIdx = getNextValidQuestionIndex(currentIdx, 1);
+    const nextIdx = getNextValidQuestionIndex(currentIdx, 1, true);
     persistAction('mark_review_and_next', nextIdx);
+    if (nextIdx === currentIdx && currentQuestion) {
+      showTransientBanner(
+        `Q${currentQuestion.questionOrder} marked for review. You are at the end of ${
+          isSectional ? sections[activeSectionIndex]?.name || 'this section' : 'the test'
+        }.`
+      );
+    }
   };
 
   const handleNavigateBack = () => {
@@ -406,10 +546,9 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
     if (isSectional && targetQ.sectionIndex !== activeSectionIndex) {
       const targetSec = sections[targetQ.sectionIndex];
       if (!targetSec?.allowReturnAfterLock) {
-        setStatusBanner(
+        showTransientBanner(
           `${sections[targetQ.sectionIndex]?.name} is locked/inactive. In NBEMS Sectional Mode, navigation is restricted to the active section.`
         );
-        setTimeout(() => setStatusBanner(null), 3500);
         return;
       }
     }
@@ -530,12 +669,21 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
     }
   };
 
-  const handleSectionExpiryAutoLock = async () => {
+  const handleSectionTransition = async (isAutoTimeout: boolean) => {
+    if (isSubmittingOrLocking) return;
     try {
-      setStatusBanner('Section time expired. Locking current section and advancing...');
+      setIsSubmittingOrLocking(true);
+      setShowLockSectionModal(false);
+      showTransientBanner(
+        isAutoTimeout
+          ? 'Section time expired. Locking current section and advancing...'
+          : 'Locking current section and unlocking next section...',
+        0
+      );
+      await flushOfflineMutations();
       const res = await apiFetch(`/api/v1/exams/${sessionId}/sections/transition`, {
         method: 'POST',
-        body: JSON.stringify({ isAutoTimeout: true }),
+        body: JSON.stringify({ isAutoTimeout }),
       });
       isTransitioningRef.current = false;
       if (res.submitted) {
@@ -546,29 +694,72 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
       }
     } catch (err: any) {
       isTransitioningRef.current = false;
-      setStatusBanner(err.message || 'Failed to transition section');
+      showTransientBanner(err.message || 'Failed to transition section', 4000);
+    } finally {
+      setIsSubmittingOrLocking(false);
     }
   };
 
   const handleFinalExamSubmit = async (isAuto = false) => {
+    if (isSubmittingOrLocking) return;
     try {
+      setIsSubmittingOrLocking(true);
       setShowSubmitModal(false);
+      await flushOfflineMutations();
       await apiFetch(`/api/v1/exams/${sessionId}/submit`, {
         method: 'POST',
         body: JSON.stringify({ isAutoSubmit: isAuto }),
       });
+      isTransitioningRef.current = false;
       onExamSubmitted(sessionId);
     } catch (err: any) {
-      setStatusBanner(err.message || 'Submission failed');
+      isTransitioningRef.current = false;
+      showTransientBanner(err.message || 'Submission failed', 4000);
+    } finally {
+      setIsSubmittingOrLocking(false);
     }
+  };
+
+  // Keep timer action refs synced with latest closures
+  latestTimerActionsRef.current = {
+    autoLockSection: () => handleSectionTransition(true),
+    autoSubmitExam: () => handleFinalExamSubmit(true),
+  };
+
+  // Stable keyboard shortcut handler ref (single listener mount + modal-aware)
+  const shortcutHandlersRef = useRef({
+    modalsOpen: false,
+    toggleGuess: handleToggleGuessMode,
+    toggleEliminate: handleToggleEliminateOption,
+    toggleSecondGuess: handleToggleSecondGuess,
+    selectOption: handleOptionSelect,
+    navBack: handleNavigateBack,
+    navNext: handleNavigateNext,
+    saveNext: handleSaveAndNext,
+    clearClick: handleClearResponseClick,
+  });
+
+  shortcutHandlersRef.current = {
+    modalsOpen: showClearModal || showSubmitModal || showLockSectionModal,
+    toggleGuess: handleToggleGuessMode,
+    toggleEliminate: handleToggleEliminateOption,
+    toggleSecondGuess: handleToggleSecondGuess,
+    selectOption: handleOptionSelect,
+    navBack: handleNavigateBack,
+    navNext: handleNavigateNext,
+    saveNext: handleSaveAndNext,
+    clearClick: handleClearResponseClick,
   };
 
   // Keyboard shortcuts (Section 19: G, 1-4, Alt+1-4, Shift+1-4, Arrows, Enter, X)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      const h = shortcutHandlersRef.current;
+      if (h.modalsOpen) return;
       if (
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
       ) {
         return;
       }
@@ -582,37 +773,44 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
         '#': 'C',
         '$': 'D',
       };
+      const codeMap: Record<string, 'A' | 'B' | 'C' | 'D'> = {
+        Digit1: 'A',
+        Digit2: 'B',
+        Digit3: 'C',
+        Digit4: 'D',
+      };
+      const mappedDigitOption = codeMap[e.code] || keyMap[e.key];
 
       if (e.key.toLowerCase() === 'g' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
-        handleToggleGuessMode();
-      } else if (e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
+        h.toggleGuess();
+      } else if (e.altKey && mappedDigitOption) {
         e.preventDefault();
-        handleToggleEliminateOption(keyMap[e.key]);
-      } else if (e.shiftKey && ['1', '2', '3', '4', '!', '@', '#', '$'].includes(e.key)) {
+        h.toggleEliminate(mappedDigitOption);
+      } else if (e.shiftKey && mappedDigitOption) {
         e.preventDefault();
-        handleToggleSecondGuess(keyMap[e.key]);
-      } else if (['1', '2', '3', '4'].includes(e.key) && !e.altKey && !e.shiftKey) {
+        h.toggleSecondGuess(mappedDigitOption);
+      } else if (['1', '2', '3', '4'].includes(e.key) && !e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
-        handleOptionSelect(keyMap[e.key]);
+        h.selectOption(keyMap[e.key]);
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        handleNavigateBack();
+        h.navBack();
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        handleNavigateNext();
+        h.navNext();
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        handleSaveAndNext();
+        h.saveNext();
       } else if (e.key.toLowerCase() === 'x') {
         e.preventDefault();
-        handleClearResponseClick();
+        h.clearClick();
       }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  });
+  }, []);
 
   const formatTimer = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -775,17 +973,21 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
 
             {isSectional && sections.length > 1 && (
               <button
+                type="button"
+                disabled={isSubmittingOrLocking}
                 onClick={() => {
                   if (activeSectionIndex < sections.length - 1) {
-                    handleSectionExpiryAutoLock();
+                    setShowLockSectionModal(true);
                   } else {
                     setShowSubmitModal(true);
                   }
                 }}
                 title="Lock current section immediately and open next section"
-                className="ml-1 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 whitespace-nowrap shrink-0"
+                className="ml-1 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-amber-300 border border-slate-700 whitespace-nowrap shrink-0 cursor-pointer"
               >
-                Lock & Next Section →
+                {activeSectionIndex < sections.length - 1
+                  ? 'Lock & Next Section →'
+                  : 'Finish Final Section →'}
               </button>
             )}
           </div>
@@ -918,10 +1120,22 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
               </div>
 
               <div className="flex items-center gap-4">
-                <span className="text-xs font-mono tabular-nums text-slate-600">
-                  Marks: <strong className="text-emerald-700">+4</strong> /{' '}
-                  <strong className="text-red-600">-1</strong>
-                </span>
+                {(() => {
+                  const pos = sessionData?.config?.markingScheme?.correct ?? 4;
+                  const neg = sessionData?.config?.markingScheme?.incorrect ?? -1;
+                  const negLabel =
+                    Math.abs(neg + 1 / 3) < 0.02
+                      ? '-⅓'
+                      : Number.isInteger(neg)
+                      ? String(neg)
+                      : neg.toFixed(2);
+                  return (
+                    <span className="text-xs font-mono tabular-nums text-slate-600">
+                      Marks: <strong className="text-emerald-700">+{pos}</strong> /{' '}
+                      <strong className="text-red-600">{negLabel}</strong>
+                    </span>
+                  );
+                })()}
 
                 {/* Saved vs Pending State Indicator */}
                 {currentQuestion.response.savedOption ? (
@@ -1070,91 +1284,126 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
                 </div>
               </div>
 
-              {/* ANSWER OPTIONS (A, B, C, D) WITH EXACT CONFIDENCE VISUAL ENCODINGS */}
+              {/* ANSWER OPTIONS (A, B, C, D) WITH EXACT CONFIDENCE & PRACTICE FEEDBACK VISUAL ENCODINGS */}
               <div className="space-y-3">
-                {currentQuestion.question.options.map((opt: any) => {
-                  const isSelectedPending = pendingOption === opt.id;
-                  const isSavedCommitted = currentQuestion.response.savedOption === opt.id;
-                  const isEliminated = eliminatedOptions.includes(opt.id);
-                  const isSecondGuess = secondGuessOption === opt.id;
-                  const isMainGuessVisual =
-                    (isSelectedPending || isSavedCommitted) && guessModeActive;
+                {(() => {
+                  const selectedPracticeOption =
+                    currentQuestion.response.savedOption || pendingOption;
+                  const showPracticeFeedback =
+                    isPracticeMode &&
+                    Boolean(selectedPracticeOption) &&
+                    Boolean(currentQuestion.question.correctOption);
 
-                  let containerStyle =
-                    'bg-white border-slate-200 hover:border-slate-300 text-slate-900';
+                  return currentQuestion.question.options.map((opt: any) => {
+                    const isSelectedPending = pendingOption === opt.id;
+                    const isSavedCommitted = currentQuestion.response.savedOption === opt.id;
+                    const isEliminated = eliminatedOptions.includes(opt.id);
+                    const isSecondGuess = secondGuessOption === opt.id;
+                    const isMainGuessVisual =
+                      (isSelectedPending || isSavedCommitted) && guessModeActive;
+                    const isPracticeCorrect =
+                      showPracticeFeedback &&
+                      opt.id === currentQuestion.question.correctOption;
+                    const isPracticeWrongSelected =
+                      showPracticeFeedback &&
+                      opt.id === selectedPracticeOption &&
+                      opt.id !== currentQuestion.question.correctOption;
 
-                  if (isMainGuessVisual) {
-                    containerStyle = 'bg-[#E9D5FF] border-[#A855F7] text-slate-950 border-2';
-                  } else if (isSecondGuess) {
-                    containerStyle = 'bg-[#FED7AA] border-[#F97316] text-slate-950 border-2';
-                  } else if (isSelectedPending || isSavedCommitted) {
-                    containerStyle = 'bg-sky-50 border-sky-600 text-slate-950 border-2';
-                  } else if (isEliminated) {
-                    containerStyle = 'bg-slate-50 border-slate-200 text-slate-400 opacity-75';
-                  }
+                    let containerStyle =
+                      'bg-white border-slate-200 hover:border-slate-300 text-slate-900';
 
-                  return (
-                    <div
-                      key={opt.id}
-                      onClick={() => handleOptionSelect(opt.id)}
-                      onContextMenu={(e) => handleToggleSecondGuess(opt.id, e)}
-                      className={`group relative rounded-lg border p-3.5 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${containerStyle}`}
-                    >
-                      <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                        {/* Option Radio Key */}
-                        <div
-                          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-mono font-bold shrink-0 mt-0.5 border ${
-                            isMainGuessVisual
-                              ? 'bg-purple-700 text-white border-purple-800'
-                              : isSecondGuess
-                              ? 'bg-orange-600 text-white border-orange-700'
-                              : isSelectedPending || isSavedCommitted
-                              ? 'bg-sky-600 text-white border-sky-700'
-                              : 'bg-slate-100 text-slate-700 border-slate-300'
-                          }`}
-                        >
-                          {opt.id}
-                        </div>
+                    if (isPracticeCorrect) {
+                      containerStyle =
+                        'bg-emerald-50 border-emerald-600 text-slate-950 border-2';
+                    } else if (isPracticeWrongSelected) {
+                      containerStyle =
+                        'bg-red-50 border-red-500 text-slate-950 border-2';
+                    } else if (isMainGuessVisual) {
+                      containerStyle = 'bg-[#E9D5FF] border-[#A855F7] text-slate-950 border-2';
+                    } else if (isSecondGuess) {
+                      containerStyle = 'bg-[#FED7AA] border-[#F97316] text-slate-950 border-2';
+                    } else if (isSelectedPending || isSavedCommitted) {
+                      containerStyle = 'bg-sky-50 border-sky-600 text-slate-950 border-2';
+                    } else if (isEliminated) {
+                      containerStyle = 'bg-slate-50 border-slate-200 text-slate-400 opacity-75';
+                    }
 
-                        <div className="space-y-1 flex-1 min-w-0">
+                    return (
+                      <div
+                        key={opt.id}
+                        onClick={() => handleOptionSelect(opt.id)}
+                        onContextMenu={(e) => handleToggleSecondGuess(opt.id, e)}
+                        className={`group relative rounded-lg border p-3.5 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${containerStyle}`}
+                      >
+                        <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                          {/* Option Radio Key */}
                           <div
-                            className={`text-sm md:text-[15px] leading-snug break-words ${
-                              isEliminated ? 'line-through text-slate-400' : 'font-medium'
+                            className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-mono font-bold shrink-0 mt-0.5 border ${
+                              isPracticeCorrect
+                                ? 'bg-emerald-600 text-white border-emerald-700'
+                                : isPracticeWrongSelected
+                                ? 'bg-red-600 text-white border-red-700'
+                                : isMainGuessVisual
+                                ? 'bg-purple-700 text-white border-purple-800'
+                                : isSecondGuess
+                                ? 'bg-orange-600 text-white border-orange-700'
+                                : isSelectedPending || isSavedCommitted
+                                ? 'bg-sky-600 text-white border-sky-700'
+                                : 'bg-slate-100 text-slate-700 border-slate-300'
                             }`}
                           >
-                            {opt.text}
+                            {opt.id}
                           </div>
 
-                          {/* Status Sub-labels */}
-                          <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                            {isSavedCommitted && (
-                              <span className="font-semibold text-emerald-800">
-                                ● Committed Answer
-                              </span>
-                            )}
-                            {isSelectedPending && !isSavedCommitted && strictSaveMode && (
-                              <span className="font-semibold text-amber-800">
-                                ○ Pending (Click Save & Next to commit)
-                              </span>
-                            )}
-                            {isMainGuessVisual && (
-                              <span className="font-semibold text-purple-900">
-                                · Main Guess (Graded)
-                              </span>
-                            )}
-                            {isSecondGuess && (
-                              <span className="font-semibold text-orange-900">
-                                · Second Guess (Analytical Only — Not Graded)
-                              </span>
-                            )}
-                            {isEliminated && (
-                              <span className="font-semibold text-slate-500">
-                                · Eliminated Option
-                              </span>
-                            )}
+                          <div className="space-y-1 flex-1 min-w-0">
+                            <div
+                              className={`text-sm md:text-[15px] leading-snug break-words ${
+                                isEliminated ? 'line-through text-slate-400' : 'font-medium'
+                              }`}
+                            >
+                              {opt.text}
+                            </div>
+
+                            {/* Status Sub-labels */}
+                            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                              {isPracticeCorrect && (
+                                <span className="font-bold text-emerald-800">
+                                  ✓ Correct Answer
+                                </span>
+                              )}
+                              {isPracticeWrongSelected && (
+                                <span className="font-bold text-red-700">
+                                  ✕ Incorrect Selection
+                                </span>
+                              )}
+                              {isSavedCommitted && (
+                                <span className="font-semibold text-emerald-800">
+                                  ● Committed Answer
+                                </span>
+                              )}
+                              {isSelectedPending && !isSavedCommitted && strictSaveMode && (
+                                <span className="font-semibold text-amber-800">
+                                  ○ Pending (Click Save & Next to commit)
+                                </span>
+                              )}
+                              {isMainGuessVisual && (
+                                <span className="font-semibold text-purple-900">
+                                  · Main Guess (Graded)
+                                </span>
+                              )}
+                              {isSecondGuess && (
+                                <span className="font-semibold text-orange-900">
+                                  · Second Guess (Analytical Only — Not Graded)
+                                </span>
+                              )}
+                              {isEliminated && (
+                                <span className="font-semibold text-slate-500">
+                                  · Eliminated Option
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
                       {/* Right-side Quick Controls for 2nd Guess & Option Elimination */}
                       <div
@@ -1187,9 +1436,10 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
                           <Slash className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                    </div>
-                  );
-                })}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
 
               {/* TUTOR / PRACTICE MODE INSTANT EXPLANATION PANEL */}
@@ -1510,6 +1760,50 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
         </div>
       )}
 
+      {/* SECTION LOCK CONFIRMATION MODAL */}
+      {showLockSectionModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-lg max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center gap-2 text-slate-900">
+              <Lock className="w-5 h-5 text-amber-600" />
+              <h3 className="text-base font-bold">
+                Lock {sections[activeSectionIndex]?.name} & Advance?
+              </h3>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              In NBEMS Sectional Mode, locking{' '}
+              <strong>{sections[activeSectionIndex]?.name}</strong> is permanent. You will not be
+              able to return to edit answers in this section once{' '}
+              <strong>{sections[activeSectionIndex + 1]?.name}</strong> opens.
+            </p>
+            {hasUnsavedPendingSelection && (
+              <div className="p-3 rounded bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                Warning: Question {currentQuestion.questionOrder} has an unsaved pending option (
+                <strong>{pendingOption}</strong>). Cancel and click{' '}
+                <strong>Save & Next</strong> first if you want it graded.
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowLockSectionModal(false)}
+                className="px-4 py-2 rounded border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Stay in Current Section
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingOrLocking}
+                onClick={() => handleSectionTransition(false)}
+                className="px-4 py-2 rounded bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
+              >
+                Lock & Open {sections[activeSectionIndex + 1]?.name}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* FINAL SUBMISSION CONFIRMATION MODAL */}
       {showSubmitModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
@@ -1568,16 +1862,19 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
 
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
+                type="button"
                 onClick={() => setShowSubmitModal(false)}
-                className="px-4 py-2 rounded border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="px-4 py-2 rounded border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
               >
                 Return to Exam
               </button>
               <button
+                type="button"
+                disabled={isSubmittingOrLocking}
                 onClick={() => handleFinalExamSubmit(false)}
-                className="px-5 py-2 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold"
+                className="px-5 py-2 rounded bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
               >
-                Submit & Generate Intelligence Report
+                {isSubmittingOrLocking ? 'Submitting...' : 'Submit & Generate Intelligence Report'}
               </button>
             </div>
           </div>

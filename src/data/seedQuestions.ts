@@ -23,49 +23,49 @@ export const NEET_PG_SUBJECTS = [
 ] as const;
 
 export const DEFAULT_NEET_PG_FULL_MOCK_CONFIG: ExamConfig = {
-  configVersion: '1.0',
+  configVersion: '2.0',
   examId: 'neet-pg-full-mock',
-  examName: 'NEET PG Full Mock (200 Questions · 5 Time-Locked Sections)',
+  examName: 'NEET-PG 2026 Full Mock (180 Questions · 5 Time-Locked Sections)',
   mode: 'exam',
   pattern: {
-    totalQuestions: 200,
+    totalQuestions: 180,
     questionType: 'single_best_answer',
     optionsPerQuestion: 4,
-    durationSeconds: 12600, // 210 minutes
+    durationSeconds: 12600, // 210 minutes (3h 30m)
     sectional: true,
     sections: [
       {
         sectionId: 'section-a',
         name: 'Section A',
-        questionCount: 40,
+        questionCount: 36,
         durationSeconds: 2520, // 42 minutes
         allowReturnAfterLock: false,
       },
       {
         sectionId: 'section-b',
         name: 'Section B',
-        questionCount: 40,
+        questionCount: 36,
         durationSeconds: 2520,
         allowReturnAfterLock: false,
       },
       {
         sectionId: 'section-c',
         name: 'Section C',
-        questionCount: 40,
+        questionCount: 36,
         durationSeconds: 2520,
         allowReturnAfterLock: false,
       },
       {
         sectionId: 'section-d',
         name: 'Section D',
-        questionCount: 40,
+        questionCount: 36,
         durationSeconds: 2520,
         allowReturnAfterLock: false,
       },
       {
         sectionId: 'section-e',
         name: 'Section E',
-        questionCount: 40,
+        questionCount: 36,
         durationSeconds: 2520,
         allowReturnAfterLock: false,
       },
@@ -74,6 +74,64 @@ export const DEFAULT_NEET_PG_FULL_MOCK_CONFIG: ExamConfig = {
   markingScheme: {
     correct: 4,
     incorrect: -1,
+    unattempted: 0,
+  },
+  settings: {
+    strictSaveMode: true,
+    allowClearResponse: true,
+    allowMarkForReview: true,
+    allowGuessTagging: true,
+    allowOptionElimination: true,
+    showResultAfterSubmit: true,
+    showExplanationDuringExam: false,
+  },
+};
+
+export const DEFAULT_INICET_FULL_MOCK_CONFIG: ExamConfig = {
+  configVersion: '2.0',
+  examId: 'inicet-full-mock',
+  examName: 'INI-CET Full Mock (200 Questions · 4 Time-Locked Parts)',
+  mode: 'exam',
+  pattern: {
+    totalQuestions: 200,
+    questionType: 'single_best_answer',
+    optionsPerQuestion: 4,
+    durationSeconds: 10800, // 180 minutes (3h 00m)
+    sectional: true,
+    sections: [
+      {
+        sectionId: 'part-a',
+        name: 'Part A',
+        questionCount: 50,
+        durationSeconds: 2700, // 45 minutes
+        allowReturnAfterLock: false,
+      },
+      {
+        sectionId: 'part-b',
+        name: 'Part B',
+        questionCount: 50,
+        durationSeconds: 2700,
+        allowReturnAfterLock: false,
+      },
+      {
+        sectionId: 'part-c',
+        name: 'Part C',
+        questionCount: 50,
+        durationSeconds: 2700,
+        allowReturnAfterLock: false,
+      },
+      {
+        sectionId: 'part-d',
+        name: 'Part D',
+        questionCount: 50,
+        durationSeconds: 2700,
+        allowReturnAfterLock: false,
+      },
+    ],
+  },
+  markingScheme: {
+    correct: 1,
+    incorrect: -1 / 3,
     unattempted: 0,
   },
   settings: {
@@ -160,87 +218,235 @@ export const TUTOR_PRACTICE_CONFIG: ExamConfig = {
   },
 };
 
-export const NEET_PG_FULL_MOCK_1_CONFIG: ExamConfig = {
-  ...DEFAULT_NEET_PG_FULL_MOCK_CONFIG,
-  examId: 'neet-pg-full-mock-1',
-  examName: 'NEET-PG All-India Grand Mock Test 1 (Oct 18, 2026)',
-};
+const NEET_PG_MOCK_CATALOG_SPECS = [
+  {
+    num: 1,
+    date: 'Aug 09, 2026',
+    tag: 'National Baseline GT',
+    description:
+      'All 19 NEET-PG subjects balanced across 5 time-locked 36-Q sections (42 mins each, +4/-1, 720 marks). Ideal baseline benchmark matching NBEMS 2026 CBT rules.',
+  },
+  {
+    num: 2,
+    date: 'Aug 23, 2026',
+    tag: 'Clinical Vignette & Lab Tables',
+    description:
+      'High-yield bedside vignettes with arterial blood gases, hematology profiles, endocrine panels, and 50-50 clinical distractors patterned on Marrow & PrepLadder GTs.',
+  },
+  {
+    num: 3,
+    date: 'Sep 06, 2026',
+    tag: 'BTR Rapid Revision Integrated',
+    description:
+      'High-yield integrated paper emphasizing BTR-style cross-subject linkages: Pharmacology mechanisms, Pathology hallmarks, and Medicine first-line protocols.',
+  },
+  {
+    num: 4,
+    date: 'Sep 20, 2026',
+    tag: 'Pre & Para-Clinical Weightage',
+    description:
+      'Focused stress-test across Anatomy, Physiology, Biochemistry, Pathology, Microbiology, and Forensic Medicine woven into modern NBEMS clinical stems.',
+  },
+  {
+    num: 5,
+    date: 'Oct 04, 2026',
+    tag: 'Medicine & Pediatrics Deep Dive',
+    description:
+      'Cardiology, Neurology, Nephrology, Critical Care, and Neonatology clinical decision trees with time-pressure pacing across 5 locked 42-minute sections.',
+  },
+  {
+    num: 6,
+    date: 'Oct 18, 2026',
+    tag: 'Surgery, OBGY & Orthopedics',
+    description:
+      'Trauma ATLS algorithms, GI surgery emergencies, high-risk obstetrics, gynecological oncology, and orthopedic nerve injuries under NBEMS negative marking.',
+  },
+  {
+    num: 7,
+    date: 'Nov 01, 2026',
+    tag: 'Short Subjects & PSM High-Yield',
+    description:
+      'High-scoring rank-decider mock targeting Community Medicine, ENT, Ophthalmology, Dermatology, Psychiatry, Anesthesia, and Radiology clinical pearls.',
+  },
+  {
+    num: 8,
+    date: 'Nov 15, 2026',
+    tag: 'Recent Guidelines & PYQ Traps',
+    description:
+      'Updated NTEP/NACP national programs, latest AHA/GOLD/FIGO guideline updates, and classic previous-year look-alike distractors designed to test guess calibration.',
+  },
+  {
+    num: 9,
+    date: 'Nov 29, 2026',
+    tag: 'Pre-Exam National Simulator',
+    description:
+      'Full-length difficulty-calibrated simulation replicating actual exam fatigue, section lock transitions, and balanced easy/moderate/hard clinical question mix.',
+  },
+  {
+    num: 10,
+    date: 'Dec 13, 2026',
+    tag: 'All-India Mega Grand Test',
+    description:
+      'Final high-stakes 180-MCQ NBEMS 2026 Grand Mock synthesizing all 19 subjects with comprehensive post-exam guess intelligence and knowledge-gap audit.',
+  },
+] as const;
 
-export const NEET_PG_FULL_MOCK_2_CONFIG: ExamConfig = {
-  ...DEFAULT_NEET_PG_FULL_MOCK_CONFIG,
-  examId: 'neet-pg-full-mock-2',
-  examName: 'NEET-PG All-India Grand Mock Test 2 (Nov 02, 2026)',
-};
+const INICET_MOCK_CATALOG_SPECS = [
+  {
+    num: 1,
+    date: 'Aug 16, 2026',
+    tag: 'AIIMS Core Conceptual GT',
+    description:
+      'Official AIIMS INI-CET blueprint: 200 MCQs across 4 time-locked 50-Q parts (45 mins each, 180 mins total, +1 / -⅓ negative marking, 200 max marks).',
+  },
+  {
+    num: 2,
+    date: 'Aug 30, 2026',
+    tag: 'Multi-Statement & Assertion-Reason',
+    description:
+      'High-cognitive AIIMS/PGI-style multi-statement clinical problems and assertion-reason stems designed to test precise 50-50 option elimination.',
+  },
+  {
+    num: 3,
+    date: 'Sep 13, 2026',
+    tag: 'Molecular Pharmacology & Pathology',
+    description:
+      'Mechanism-first INI-CET Grand Test targeting receptor kinetics, Robbins molecular pathology pathways, oncogenes, and targeted biologics.',
+  },
+  {
+    num: 4,
+    date: 'Sep 27, 2026',
+    tag: 'BTR & First-Aid Integrated GT',
+    description:
+      'Rapid-recall integrated paper bridging pre-clinical biochemistry, immunology, and microbiology with bedside diagnostic interpretation under 45-min locks.',
+  },
+  {
+    num: 5,
+    date: 'Oct 11, 2026',
+    tag: 'Pre-Clinical & Anatomy Mastery',
+    description:
+      'Heavy AIIMS-weighted neuroanatomy, embryology, histology, cardiovascular physiology, and metabolic pathways calibrated for 54 seconds per MCQ.',
+  },
+  {
+    num: 6,
+    date: 'Oct 25, 2026',
+    tag: 'Clinical Reasoning & Investigation',
+    description:
+      'Multi-step diagnostic dilemmas combining lab tables, ECG/ABG interpretation, and next-best-step clinical workflows across Medicine, Surgery, and OBGY.',
+  },
+  {
+    num: 7,
+    date: 'Nov 08, 2026',
+    tag: 'Emergency, Critical Care & Pediatrics',
+    description:
+      'Acute resuscitation, toxicology, mechanical ventilation, PALS/NRP protocols, and pediatric metabolic emergencies in strict 4-part AIIMS CBT format.',
+  },
+  {
+    num: 8,
+    date: 'Nov 22, 2026',
+    tag: 'Biostatistics, PSM & Short Subjects',
+    description:
+      'High-yield INI-CET rank boosters covering epidemiological study designs, sensitivity/specificity math, ophthalmology, ENT, dermatology, and psychiatry.',
+  },
+  {
+    num: 9,
+    date: 'Dec 06, 2026',
+    tag: 'AIIMS May & Nov PYQ Pattern',
+    description:
+      'Curated around recurring AIIMS / JIPMER / PGI / NIMHANS high-yield themes with strict -⅓ penalty conditioning to optimize attempt-vs-accuracy balance.',
+  },
+  {
+    num: 10,
+    date: 'Dec 20, 2026',
+    tag: 'Final All-India INI-CET Simulator',
+    description:
+      'Flagship 200-MCQ AIIMS INI-CET Grand Mock replicating exact 4 × 50 time-locked block pacing, negative marking (-0.33), and full topic mastery audit.',
+  },
+] as const;
 
-export const INICET_SUPER_MOCK_3_CONFIG: ExamConfig = {
+export const NEET_PG_10_MOCK_CONFIGS: ExamConfig[] = NEET_PG_MOCK_CATALOG_SPECS.map((spec) => ({
   ...DEFAULT_NEET_PG_FULL_MOCK_CONFIG,
-  examId: 'inicet-super-mock-3',
-  examName: 'INI-CET Special Super-Mock Test 3 (Nov 08, 2026)',
-};
+  examId: `neet-pg-full-mock-${spec.num}`,
+  examName: `NEET-PG 2026 Grand Mock Test ${spec.num} (${spec.date})`,
+}));
+
+export const INICET_10_MOCK_CONFIGS: ExamConfig[] = INICET_MOCK_CATALOG_SPECS.map((spec) => ({
+  ...DEFAULT_INICET_FULL_MOCK_CONFIG,
+  examId: `inicet-full-mock-${spec.num}`,
+  examName: `INI-CET All-India Grand Mock Test ${spec.num} (${spec.date})`,
+}));
+
+export const BUILTIN_MOCK_CONFIGS: ExamConfig[] = [
+  ...NEET_PG_10_MOCK_CONFIGS,
+  ...INICET_10_MOCK_CONFIGS,
+];
+
+// Named convenience exports for unit tests & direct references
+export const NEET_PG_FULL_MOCK_1_CONFIG: ExamConfig = NEET_PG_10_MOCK_CONFIGS[0];
+export const NEET_PG_FULL_MOCK_2_CONFIG: ExamConfig = NEET_PG_10_MOCK_CONFIGS[1];
+export const INICET_SUPER_MOCK_3_CONFIG: ExamConfig = INICET_10_MOCK_CONFIGS[2];
 
 export const BUILTIN_MOCK_PAPERS_METADATA = [
-  {
-    id: 'neet-pg-full-mock-1',
-    configKey: 'neet-pg-full-mock-1',
-    title: 'NEET-PG All-India Grand Mock Test 1',
-    date: 'Oct 18, 2026',
+  ...NEET_PG_MOCK_CATALOG_SPECS.map((spec) => ({
+    id: `neet-pg-full-mock-${spec.num}`,
+    configKey: `neet-pg-full-mock-${spec.num}`,
+    title: `NEET-PG 2026 Grand Mock Test ${spec.num}`,
+    date: spec.date,
     targetExam: 'NEET-PG' as const,
-    totalQuestions: 200,
+    totalQuestions: 180,
     durationMinutes: 210,
     sectionCount: 5,
-    tag: 'National Benchmark',
-    description:
-      'All 19 NEET-PG subjects balanced across 5 time-locked 40-Q sections with strict NBEMS CBT marking (+4 / -1). Features core clinical vignettes and diagnostic hallmarks.',
-  },
-  {
-    id: 'neet-pg-full-mock-2',
-    configKey: 'neet-pg-full-mock-2',
-    title: 'NEET-PG All-India Grand Mock Test 2',
-    date: 'Nov 02, 2026',
-    targetExam: 'NEET-PG' as const,
-    totalQuestions: 200,
-    durationMinutes: 210,
-    sectionCount: 5,
-    tag: 'Table & Investigation Intensive',
-    description:
-      'High-yield multi-table arterial blood gases, hematology profiles, endocrine function tests, and emergency bedside clinical dilemmas with 50-50 elimination distractors.',
-  },
-  {
-    id: 'inicet-super-mock-3',
-    configKey: 'inicet-super-mock-3',
-    title: 'INI-CET Special Super-Mock Test 3',
-    date: 'Nov 08, 2026',
+    questionsPerSection: 36,
+    sectionDurationMinutes: 42,
+    markingScheme: { correct: 4, incorrect: -1, unattempted: 0 },
+    maxMarks: 720,
+    tag: spec.tag,
+    description: spec.description,
+  })),
+  ...INICET_MOCK_CATALOG_SPECS.map((spec) => ({
+    id: `inicet-full-mock-${spec.num}`,
+    configKey: `inicet-full-mock-${spec.num}`,
+    title: `INI-CET All-India Grand Mock Test ${spec.num}`,
+    date: spec.date,
     targetExam: 'INI-CET' as const,
     totalQuestions: 200,
-    durationMinutes: 210,
-    sectionCount: 5,
-    tag: 'High Cognitive Difficulty',
-    description:
-      'AIIMS / JIPMER / PGI oriented examination focusing on multi-statement reasoning, advanced molecular pharmacology, histopathology slide pearls, and multi-step diagnostic traps.',
-  },
+    durationMinutes: 180,
+    sectionCount: 4,
+    questionsPerSection: 50,
+    sectionDurationMinutes: 45,
+    markingScheme: { correct: 1, incorrect: -1 / 3, unattempted: 0 },
+    maxMarks: 200,
+    tag: spec.tag,
+    description: spec.description,
+  })),
 ];
 
 export const SAMPLE_IMPORTABLE_MOCK_PAPER = {
-  examId: 'neet-pg-grand-mock-4',
-  examName: 'NEET-PG All-India Grand Mock Test 4 (National Benchmark)',
-  date: 'Nov 15, 2026',
+  examId: 'neet-pg-2026-custom-gt-11',
+  examName: 'NEET-PG 2026 Custom Grand Mock 11 (NBEMS 180-Q Format)',
+  date: 'Dec 27, 2026',
   targetExam: 'NEET-PG' as const,
   durationMinutes: 210,
-  tag: 'Clinical Vignettes & Rapid Recall',
+  markingScheme: {
+    correct: 4,
+    incorrect: -1,
+    unattempted: 0,
+  },
+  tag: 'NBEMS 2026 · 180 Qs · +4/-1',
   description:
-    'Comprehensive 200-Question multi-sectional mock paper with full high-yield clinical vignettes and option-by-option rationale.',
+    'Validated NEET-PG 2026 Grand Test package: 180 MCQs across 5 time-locked sections (36 Qs × 42 mins each, 720 Max Marks, +4 / -1). Any remaining slots automatically draw from the verified question bank.',
   sectional: true,
   sections: [
-    { sectionId: 'section-a', name: 'Section A (Pre-Clinical & Anatomy)', questionCount: 40, durationMinutes: 42 },
-    { sectionId: 'section-b', name: 'Section B (Para-Clinical & Pathology)', questionCount: 40, durationMinutes: 42 },
-    { sectionId: 'section-c', name: 'Section C (Specialties & ENT/Ophtha)', questionCount: 40, durationMinutes: 42 },
-    { sectionId: 'section-d', name: 'Section D (General Medicine & Peds)', questionCount: 40, durationMinutes: 42 },
-    { sectionId: 'section-e', name: 'Section E (General Surgery & OBG)', questionCount: 40, durationMinutes: 42 },
+    { sectionId: 'section-a', name: 'Section A (Pre-Clinical & Anatomy)', questionCount: 36, durationMinutes: 42 },
+    { sectionId: 'section-b', name: 'Section B (Para-Clinical & Pathology)', questionCount: 36, durationMinutes: 42 },
+    { sectionId: 'section-c', name: 'Section C (Short Subjects & PSM)', questionCount: 36, durationMinutes: 42 },
+    { sectionId: 'section-d', name: 'Section D (Medicine & Pediatrics)', questionCount: 36, durationMinutes: 42 },
+    { sectionId: 'section-e', name: 'Section E (Surgery & OBGY)', questionCount: 36, durationMinutes: 42 },
   ],
   questions: [
     {
       schemaVersion: '1.0',
-      questionId: 'MOCK4-MED-001',
+      questionId: 'NEET26-MED-001',
       questionVersion: 1,
       subjectId: 'medicine',
       subjectName: 'Medicine',
@@ -292,7 +498,7 @@ export const SAMPLE_IMPORTABLE_MOCK_PAPER = {
     },
     {
       schemaVersion: '1.0',
-      questionId: 'MOCK4-SURG-002',
+      questionId: 'NEET26-SURG-002',
       questionVersion: 1,
       subjectId: 'surgery',
       subjectName: 'Surgery',
@@ -340,6 +546,147 @@ export const SAMPLE_IMPORTABLE_MOCK_PAPER = {
         source: 'Bailey & Love 28th Edition Demonstration',
         references: ['Bailey & Love Short Practice of Surgery, 28th Edition, Chapter 71'],
         tags: ['surgery', 'sigmoid-volvulus', 'coffee-bean', 'endoscopy'],
+      },
+      status: 'published',
+    },
+  ],
+};
+
+export const SAMPLE_IMPORTABLE_INICET_PAPER = {
+  examId: 'inicet-2026-custom-gt-11',
+  examName: 'INI-CET 2026 Custom Grand Mock 11 (AIIMS 200-Q Format)',
+  date: 'Dec 29, 2026',
+  targetExam: 'INI-CET' as const,
+  durationMinutes: 180,
+  markingScheme: {
+    correct: 1,
+    incorrect: -0.3333,
+    unattempted: 0,
+  },
+  tag: 'AIIMS INI-CET · 200 Qs · +1/-⅓',
+  description:
+    'Validated AIIMS INI-CET Grand Test package: 200 MCQs across 4 time-locked parts (50 Qs × 45 mins each, 180 mins total, +1 / -⅓ negative marking, 200 Max Marks).',
+  sectional: true,
+  sections: [
+    { sectionId: 'part-a', name: 'Part A (Pre-Clinical & Basic Sciences)', questionCount: 50, durationMinutes: 45 },
+    { sectionId: 'part-b', name: 'Part B (Para-Clinical & Integrated)', questionCount: 50, durationMinutes: 45 },
+    { sectionId: 'part-c', name: 'Part C (Medicine, Peds & Allied)', questionCount: 50, durationMinutes: 45 },
+    { sectionId: 'part-d', name: 'Part D (Surgery, OBGY & Short Subjects)', questionCount: 50, durationMinutes: 45 },
+  ],
+  questions: [
+    {
+      schemaVersion: '1.0',
+      questionId: 'INICET26-PHAR-001',
+      questionVersion: 1,
+      subjectId: 'pharmacology',
+      subjectName: 'Pharmacology',
+      systemId: 'cardiovascular',
+      systemName: 'Cardiovascular Pharmacology',
+      topicId: 'heart-failure-drugs',
+      topicName: 'ARNI (Sacubitril-Valsartan) Mechanism & Contraindications',
+      subtopic: 'Neprilysin Inhibition & Bradykinin Angioedema',
+      questionType: 'multi_statement',
+      difficulty: 'hard',
+      question: {
+        text: 'Which of the following statements regarding Sacubitril-Valsartan (ARNI) therapy in HFrEF are TRUE?\n1. Requires a mandatory 36-hour washout period after stopping Enalapril.\n2. Increases circulating BNP levels while decreasing NT-proBNP levels.\n3. Inhibits neprilysin, preventing degradation of natriuretic peptides and bradykinin.\n4. Contraindicated if serum potassium is 4.2 mEq/L.',
+        clinicalVignette:
+          'A 61-year-old man with NYHA Class III heart failure with reduced ejection fraction (LVEF 28%) currently on Enalapril 10 mg twice daily, Carvedilol, and Spironolactone is being transitioned to Sacubitril-Valsartan.',
+        images: [],
+        tables: [],
+      },
+      options: [
+        { id: 'A', text: '1 and 3 only' },
+        { id: 'B', text: '1, 2, and 3 only' },
+        { id: 'C', text: '2, 3, and 4 only' },
+        { id: 'D', text: '1, 2, 3, and 4' },
+      ],
+      correctAnswer: 'B',
+      explanation: {
+        summary:
+          'Statements 1, 2, and 3 are true. ARNI requires a 36-hour washout from ACE inhibitors to avoid angioedema, raises BNP (a neprilysin substrate) while lowering NT-proBNP, and is safe at normal potassium (4.2 mEq/L).',
+        details:
+          'Sacubitril inhibits neprilysin (neutral endopeptidase), which degrades ANP, BNP, and bradykinin. Combining neprilysin inhibition with an ACE inhibitor markedly increases bradykinin and risks life-threatening angioedema; hence a 36-hour washout is mandatory when switching from ACEi (not needed when switching from an ARB). Because BNP is degraded by neprilysin, BNP levels rise on ARNI therapy, making NT-proBNP the preferred biomarker to monitor heart failure response.',
+        optionExplanations: {
+          A: 'Incorrect. Statement 2 is also true because NT-proBNP is not cleaved by neprilysin and falls with clinical improvement.',
+          B: 'Correct. Statements 1, 2, and 3 accurately reflect ARNI pharmacology and biomarker monitoring.',
+          C: 'Incorrect. Serum potassium of 4.2 mEq/L is within normal range and is not a contraindication.',
+          D: 'Incorrect. Statement 4 is false; hyperkalemia (>5.2–5.5 mEq/L) is the concern, not 4.2 mEq/L.',
+        },
+        learningPoints: [
+          'Mandatory 36-hour washout period when switching from ACE inhibitor to ARNI (Sacubitril-Valsartan).',
+          'Use NT-proBNP (not BNP) to track heart failure improvement on ARNI.',
+        ],
+      },
+      metadata: {
+        isPYQ: true,
+        year: 2024,
+        source: 'INI-CET Nov 2024 Recall Pattern',
+        references: ["Goodman & Gilman's The Pharmacological Basis of Therapeutics, 14th Edition"],
+        tags: ['pharmacology', 'arni', 'hfref', 'multi-statement'],
+      },
+      status: 'published',
+    },
+    {
+      schemaVersion: '1.0',
+      questionId: 'INICET26-PATH-002',
+      questionVersion: 1,
+      subjectId: 'pathology',
+      subjectName: 'Pathology',
+      systemId: 'hematology',
+      systemName: 'Hematopathology',
+      topicId: 'myeloproliferative-neoplasms',
+      topicName: 'Polycythemia Vera vs Secondary Erythrocytosis',
+      subtopic: 'JAK2 V617F Mutation & Erythropoietin Levels',
+      questionType: 'table_based',
+      difficulty: 'medium',
+      question: {
+        text: 'Based on the diagnostic table above, which molecular finding and marrow feature most strongly confirm the diagnosis?',
+        clinicalVignette:
+          'A 56-year-old man presents with facial plethora, pruritus after hot showers, burning pain in the fingers relieved by aspirin, and splenomegaly 4 cm below the left costal margin.',
+        images: [],
+        tables: [
+          {
+            title: 'Diagnostic Hematology & Hormone Panel',
+            headers: ['Parameter', 'Patient Result', 'Reference Range'],
+            rows: [
+              ['Hemoglobin', '19.4 g/dL', '13.5–17.5 g/dL'],
+              ['Hematocrit', '59%', '41–50%'],
+              ['Platelets', '610,000 /µL', '150,000–450,000 /µL'],
+              ['Serum Erythropoietin (EPO)', '1.8 mIU/mL (Low)', '4.0–24.0 mIU/mL'],
+              ['Arterial SpO2', '98% on room air', '95–100%'],
+            ],
+          },
+        ],
+      },
+      options: [
+        { id: 'A', text: 'BCR-ABL1 t(9;22) fusion with myeloid hyperplasia and low LAP score' },
+        { id: 'B', text: 'JAK2 V617F gain-of-function mutation with trilineage panmyelosis' },
+        { id: 'C', text: 'CALR exon 9 deletion with isolated megakaryocytic proliferation' },
+        { id: 'D', text: 'VHL tumor suppressor loss with elevated paraneoplastic EPO' },
+      ],
+      correctAnswer: 'B',
+      explanation: {
+        summary:
+          'Aquagenic pruritus, erythromelalgia, splenomegaly, elevated Hb/Hct, thrombocytosis, and suppressed serum EPO define Polycythemia Vera, driven by JAK2 V617F in >95% of cases.',
+        details:
+          'In Polycythemia Vera (PV), constitutive activation of the JAK2 tyrosine kinase (exon 14 V617F mutation in ~95%, exon 12 in ~3%) drives EPO-independent trilineage proliferation (panmyelosis), suppressing endogenous serum EPO via negative feedback. Secondary polycythemia (hypoxia, renal cell carcinoma/VHL) presents with elevated EPO.',
+        optionExplanations: {
+          A: 'Incorrect. BCR-ABL1 defines Chronic Myeloid Leukemia (CML), not Polycythemia Vera.',
+          B: 'Correct. JAK2 V617F + panmyelosis + subnormal serum EPO fulfills WHO major/minor diagnostic criteria for PV.',
+          C: 'Incorrect. CALR mutations occur in Essential Thrombocythemia and Primary Myelofibrosis, almost never in PV.',
+          D: 'Incorrect. VHL loss causes renal cell carcinoma / hemangioblastoma with high paraneoplastic EPO.',
+        },
+        learningPoints: [
+          'Polycythemia Vera = JAK2 V617F (>95%) + Low Serum EPO + Panmyelosis + Aquagenic pruritus.',
+          'Secondary erythrocytosis always has normal or elevated serum EPO.',
+        ],
+      },
+      metadata: {
+        isPYQ: true,
+        year: 2025,
+        source: 'INI-CET May 2025 Recall Pattern',
+        references: ['Robbins & Cotran Pathologic Basis of Disease, 10th Edition, Chapter 13'],
+        tags: ['pathology', 'polycythemia-vera', 'jak2', 'table-based'],
       },
       status: 'published',
     },

@@ -2,23 +2,27 @@ import React, { useState } from 'react';
 import {
   Play,
   Sliders,
-  Target,
-  TrendingUp,
-  HelpCircle,
-  AlertCircle,
-  BookMarked,
-  Clock,
-  RefreshCw,
   ArrowUpRight,
   Layers,
   Award,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Area,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from 'recharts';
 import {
   SubjectAnalyticsItem,
   TopicAnalyticsItem,
   GuessIntelligenceSummary,
   AnswerChangeSummary,
 } from '../types/domain.ts';
+import { KnowledgeHeatmap, resolveSubjectSlug } from './KnowledgeHeatmap.tsx';
 
 interface IntelligenceDashboardProps {
   analyticsData: any;
@@ -231,12 +235,24 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
         </div>
       </div>
 
-      {/* TAB 1: EXECUTIVE OVERVIEW, TRENDS & STUDY RECOMMENDATIONS */}
+      {/* TAB 1: EXECUTIVE OVERVIEW, KNOWLEDGE HEATMAP, TRENDS & STUDY RECOMMENDATIONS */}
       {activeSubTab === 'overview' && (
         <div className="space-y-8">
+          {/* Interactive 19-Subject Knowledge Heatmap (Recharts Treemap + Matrix) */}
+          <KnowledgeHeatmap
+            analyticsData={analyticsData}
+            onPracticeSubject={(subjectSlug) =>
+              onStartExamPreset('neet-pg-tutor-mode', {
+                subjects: [subjectSlug],
+                questionCount: 10,
+                mode: 'practice',
+              })
+            }
+          />
+
           {/* Longitudinal Trend Section + Recent Sessions */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Trend Progression Chart & Table (7 cols) */}
+            {/* Trend Progression Chart & Cards (7 cols) */}
             <div className="lg:col-span-7 bg-white border border-slate-200 rounded-lg p-6 space-y-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -252,8 +268,9 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
                   {(['3', '5', '10', 'all'] as const).map((rng) => (
                     <button
                       key={rng}
+                      type="button"
                       onClick={() => setTrendRange(rng)}
-                      className={`px-2.5 py-1 rounded text-xs font-medium ${
+                      className={`px-2.5 py-1 rounded text-xs font-medium cursor-pointer ${
                         trendRange === rng
                           ? 'bg-white text-slate-900 font-semibold shadow-2xs'
                           : 'text-slate-600'
@@ -265,52 +282,144 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Visual Bar & Trend Comparison */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-                {filteredTrends.map((t: any) => (
-                  <div
-                    key={t.sessionId}
-                    onClick={() => onReviewSession(t.sessionId)}
-                    className="p-4 rounded-lg border border-slate-200 hover:border-slate-300 bg-slate-50/50 cursor-pointer transition-colors space-y-2.5"
-                  >
-                    <div className="flex items-center justify-between text-xs text-slate-500 font-mono">
-                      <span>{t.date}</span>
-                      <span className="text-sky-700 font-semibold flex items-center gap-0.5">
-                        Review <ArrowUpRight className="w-3 h-3" />
-                      </span>
-                    </div>
-                    <div className="text-xs font-bold text-slate-900 truncate">
-                      {t.examName}
-                    </div>
-                    <div className="flex items-baseline justify-between font-mono tabular-nums pt-1">
-                      <div>
-                        <div className="text-[11px] text-slate-500 font-sans">Score</div>
-                        <div className="text-base font-bold text-slate-900">
-                          {t.score}/{t.maxMarks} ({t.percentageScore}%)
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[11px] text-slate-500 font-sans">Accuracy</div>
-                        <div className="text-base font-bold text-emerald-700">
-                          {t.accuracy}%
-                        </div>
-                      </div>
-                    </div>
-                    {/* Accuracy Progress Bar */}
-                    <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-600 rounded-full"
-                        style={{ width: `${Math.min(100, t.accuracy)}%` }}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-[11px] text-slate-600 font-mono pt-1">
-                      <span>Sure: {t.sureAccuracy}%</span>
-                      <span>Guess: {t.mainGuessAccuracy}%</span>
-                      <span className="text-red-600">Neg: -{t.negativeMarks}</span>
-                    </div>
+              {filteredTrends.length === 0 ? (
+                <div className="p-8 rounded-lg border border-dashed border-slate-200 bg-slate-50 text-center text-xs text-slate-500">
+                  Complete your first timed examination to unlock longitudinal score and accuracy progression.
+                </div>
+              ) : (
+                <>
+                  {/* Recharts Progression Area/Line Chart */}
+                  <div className="w-full h-52">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart
+                        data={filteredTrends.map((t: any, idx: number) => ({
+                          ...t,
+                          shortLabel: `${t.date.slice(5)} (#${idx + 1})`,
+                        }))}
+                        margin={{ top: 8, right: 12, left: -16, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient id="scorePctGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#0284C7" stopOpacity={0.22} />
+                            <stop offset="95%" stopColor="#0284C7" stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                        <XAxis
+                          dataKey="shortLabel"
+                          tick={{ fontSize: 11, fill: '#64748B' }}
+                          axisLine={{ stroke: '#CBD5E1' }}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          domain={[0, 100]}
+                          tickFormatter={(v) => `${v}%`}
+                          tick={{ fontSize: 11, fill: '#64748B' }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <Tooltip
+                          content={({ active, payload }) => {
+                            if (!active || !payload || !payload.length) return null;
+                            const d = payload[0]?.payload;
+                            if (!d) return null;
+                            return (
+                              <div className="bg-slate-900 text-white rounded-md px-3 py-2 text-xs shadow-lg border border-slate-700 space-y-1">
+                                <div className="font-bold text-white">{d.examName}</div>
+                                <div className="text-[11px] font-mono text-slate-300">{d.date}</div>
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 pt-1 border-t border-slate-700 font-mono tabular-nums text-[11px]">
+                                  <span className="text-sky-300 font-sans">Score %</span>
+                                  <span className="text-right font-bold">{d.percentageScore}%</span>
+                                  <span className="text-emerald-300 font-sans">Accuracy</span>
+                                  <span className="text-right font-bold">{d.accuracy}%</span>
+                                  <span className="text-purple-300 font-sans">Sure Acc.</span>
+                                  <span className="text-right">{d.sureAccuracy}%</span>
+                                  <span className="text-red-300 font-sans">Negative</span>
+                                  <span className="text-right">-{d.negativeMarks}</span>
+                                </div>
+                              </div>
+                            );
+                          }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="percentageScore"
+                          name="Score %"
+                          stroke="#0284C7"
+                          strokeWidth={2}
+                          fill="url(#scorePctGrad)"
+                          isAnimationActive={false}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="accuracy"
+                          name="Accuracy %"
+                          stroke="#059669"
+                          strokeWidth={2}
+                          dot={{ r: 3.5, fill: '#059669' }}
+                          isAnimationActive={false}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="sureAccuracy"
+                          name="Sure Acc. %"
+                          stroke="#7E22CE"
+                          strokeWidth={1.5}
+                          strokeDasharray="4 3"
+                          dot={false}
+                          isAnimationActive={false}
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
                   </div>
-                ))}
-              </div>
+
+                  {/* Snapshot Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+                    {filteredTrends.slice(-3).map((t: any) => (
+                      <div
+                        key={t.sessionId}
+                        onClick={() => onReviewSession(t.sessionId)}
+                        className="p-4 rounded-lg border border-slate-200 hover:border-slate-300 bg-slate-50/50 cursor-pointer transition-colors space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between text-xs text-slate-500 font-mono">
+                          <span>{t.date}</span>
+                          <span className="text-sky-700 font-semibold flex items-center gap-0.5">
+                            Review <ArrowUpRight className="w-3 h-3" />
+                          </span>
+                        </div>
+                        <div className="text-xs font-bold text-slate-900 truncate">
+                          {t.examName}
+                        </div>
+                        <div className="flex items-baseline justify-between font-mono tabular-nums pt-1">
+                          <div>
+                            <div className="text-[11px] text-slate-500 font-sans">Score</div>
+                            <div className="text-base font-bold text-slate-900">
+                              {t.score}/{t.maxMarks} ({t.percentageScore}%)
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-[11px] text-slate-500 font-sans">Accuracy</div>
+                            <div className="text-base font-bold text-emerald-700">
+                              {t.accuracy}%
+                            </div>
+                          </div>
+                        </div>
+                        <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-600 rounded-full"
+                            style={{ width: `${Math.min(100, t.accuracy)}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-600 font-mono pt-1">
+                          <span>Sure: {t.sureAccuracy}%</span>
+                          <span>Guess: {t.mainGuessAccuracy}%</span>
+                          <span className="text-red-600">Neg: -{t.negativeMarks}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Recent Sessions & Active Resume Panel (5 cols) */}
@@ -324,45 +433,53 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
                 </span>
               </div>
 
-              <div className="divide-y divide-slate-200 max-h-[310px] overflow-y-auto">
-                {recentSessions.map((s: any) => (
-                  <div
-                    key={s.sessionId}
-                    className="py-3 flex items-center justify-between gap-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-slate-900 truncate">
-                        {s.examName}
+              {recentSessions.length === 0 ? (
+                <div className="p-8 rounded-lg border border-dashed border-slate-200 bg-slate-50 text-center text-xs text-slate-500">
+                  No examination sessions recorded yet. Start a Grand Mock or 25-Q Sectional Sprint above.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-200 max-h-[380px] overflow-y-auto">
+                  {recentSessions.map((s: any) => (
+                    <div
+                      key={s.sessionId}
+                      className="py-3 flex items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-900 truncate">
+                          {s.examName}
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono mt-0.5">
+                          <span>{s.startedAt.split('T')[0]}</span>
+                          <span>·</span>
+                          <span>{s.totalQuestions} Qs</span>
+                          <span>·</span>
+                          <span className="uppercase">{s.status.replace('_', ' ')}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono mt-0.5">
-                        <span>{s.startedAt.split('T')[0]}</span>
-                        <span>·</span>
-                        <span>{s.totalQuestions} Qs</span>
-                        <span>·</span>
-                        <span className="uppercase">{s.status.replace('_', ' ')}</span>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      {s.status === 'in_progress' ? (
-                        <button
-                          onClick={() => onReviewSession(s.sessionId)}
-                          className="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold cursor-pointer"
-                        >
-                          Resume Exam
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => onReviewSession(s.sessionId)}
-                          className="px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50 text-xs font-semibold text-slate-800 font-mono cursor-pointer"
-                        >
-                          {s.score !== null ? `${s.score}/${s.maxMarks}` : 'Review'} →
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {s.status === 'in_progress' ? (
+                          <button
+                            type="button"
+                            onClick={() => onReviewSession(s.sessionId)}
+                            className="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold cursor-pointer"
+                          >
+                            Resume Exam
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => onReviewSession(s.sessionId)}
+                            className="px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50 text-xs font-semibold text-slate-800 font-mono cursor-pointer"
+                          >
+                            {s.score !== null ? `${s.score}/${s.maxMarks}` : 'Review'} →
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -391,62 +508,79 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {recommendations.map((rec: any) => (
-                <div
-                  key={rec.id}
-                  className="p-4 rounded-lg border border-slate-200 bg-slate-50/40 flex flex-col justify-between space-y-3"
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-900">
-                        Priority {rec.priority} — {rec.subjectName}
-                      </span>
-                      <span className="font-mono text-red-700 font-semibold">
-                        Gap Score: {rec.knowledgeGapScore}
-                      </span>
+            {recommendations.length === 0 ? (
+              <div className="p-6 rounded-lg border border-dashed border-slate-200 bg-slate-50 text-center text-xs text-slate-500">
+                No urgent knowledge gaps detected yet. Attempt a timed mock exam to generate evidence-verified revision recommendations.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {recommendations.map((rec: any) => (
+                  <div
+                    key={rec.id}
+                    className="p-4 rounded-lg border border-slate-200 bg-slate-50/40 flex flex-col justify-between space-y-3"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-900">
+                          Priority {rec.priority} — {rec.subjectName}
+                        </span>
+                        <span className="font-mono text-red-700 font-semibold">
+                          Gap Score: {rec.knowledgeGapScore}
+                        </span>
+                      </div>
+                      <div className="text-sm font-semibold text-slate-800">
+                        {rec.topicName}
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        <strong>Reason:</strong> {rec.reason}
+                      </p>
+                      <p className="text-[11px] font-mono text-slate-500">
+                        Evidence (n={rec.sampleSize}): {rec.evidence}
+                      </p>
                     </div>
-                    <div className="text-sm font-semibold text-slate-800">
-                      {rec.topicName}
-                    </div>
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      <strong>Reason:</strong> {rec.reason}
-                    </p>
-                    <p className="text-[11px] font-mono text-slate-500">
-                      Evidence (n={rec.sampleSize}): {rec.evidence}
-                    </p>
-                  </div>
 
-                  <div className="pt-3 border-t border-slate-200 space-y-2">
-                    <p className="text-xs text-slate-800 font-medium">
-                      <strong>Action:</strong> {rec.suggestedActivity}
-                    </p>
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="text-[11px] text-slate-500">
-                        Goal: {rec.improvementMetric}
-                      </span>
-                      <button
-                        onClick={() =>
-                          onStartExamPreset('neet-pg-tutor-mode', {
-                            subjects: [rec.subjectName.toLowerCase().replace(/\s+/g, '-')],
-                            questionCount: 10,
-                            mode: 'practice',
-                          })
-                        }
-                        className="text-xs font-semibold text-sky-700 hover:text-sky-900 whitespace-nowrap shrink-0 cursor-pointer"
-                      >
-                        Practice Topic →
-                      </button>
+                    <div className="pt-3 border-t border-slate-200 space-y-2">
+                      <p className="text-xs text-slate-800 font-medium">
+                        <strong>Action:</strong> {rec.suggestedActivity}
+                      </p>
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-[11px] text-slate-500">
+                          Goal: {rec.improvementMetric}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onStartExamPreset('neet-pg-tutor-mode', {
+                              subjects: [resolveSubjectSlug(rec.subjectName)],
+                              questionCount: 10,
+                              mode: 'practice',
+                            })
+                          }
+                          className="text-xs font-semibold text-sky-700 hover:text-sky-900 whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          Practice Topic →
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* TAB 2: GUESS ANALYTICS, 50-50 ELIMINATION INTELLIGENCE & ANSWER-CHANGE AUDIT */}
+      {activeSubTab === 'guess_5050' && !guessIntel && (
+        <div className="bg-white border border-slate-200 rounded-lg p-10 text-center space-y-2">
+          <p className="text-sm font-semibold text-slate-800">
+            No Confidence & 50-50 Elimination Analytics Available Yet
+          </p>
+          <p className="text-xs text-slate-500">
+            Complete at least one examination session to evaluate Sure vs Main Guess vs Second Guess performance.
+          </p>
+        </div>
+      )}
       {activeSubTab === 'guess_5050' && guessIntel && (
         <div className="space-y-8">
           {/* Verified Insights Banner */}
@@ -691,7 +825,18 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
 
       {/* TAB 3: SUBJECT-WISE & TOPIC-WISE DRILL-DOWN TABLE (Section 13.2 & 13.3) */}
       {activeSubTab === 'subjects_topics' && (
-        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="space-y-6">
+          <KnowledgeHeatmap
+            analyticsData={analyticsData}
+            onPracticeSubject={(subjectSlug) =>
+              onStartExamPreset('neet-pg-tutor-mode', {
+                subjects: [subjectSlug],
+                questionCount: 10,
+                mode: 'practice',
+              })
+            }
+          />
+          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
           <div className="p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="text-base font-bold text-slate-900">
@@ -788,6 +933,7 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       )}
 
@@ -930,37 +1076,44 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
               </p>
             </div>
 
-            <div className="divide-y divide-slate-200">
-              {revisionQueue.map((item: any) => (
-                <div
-                  key={item.id}
-                  className="py-3.5 flex flex-wrap items-center justify-between gap-4"
-                >
-                  <div>
-                    <div className="text-xs font-bold text-slate-900">
-                      {item.subjectName} · {item.topicName}
-                    </div>
-                    <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                      Recommended Interval: {item.intervalDays} day(s) · Due:{' '}
-                      {new Date(item.nextRevisionDueAt).toISOString().split('T')[0]} · Gap:{' '}
-                      {item.knowledgeGapScore}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() =>
-                      onStartExamPreset('neet-pg-tutor-mode', {
-                        subjects: [item.subjectName.toLowerCase().replace(/\s+/g, '-')],
-                        questionCount: 10,
-                        mode: 'practice',
-                      })
-                    }
-                    className="px-3 py-1.5 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer"
+            {revisionQueue.length === 0 ? (
+              <div className="p-8 rounded-lg border border-dashed border-slate-200 bg-slate-50 text-center text-xs text-slate-500">
+                No topics currently scheduled in your spaced revision queue. Complete a mock exam to auto-schedule weak topics.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-200">
+                {revisionQueue.map((item: any) => (
+                  <div
+                    key={item.id}
+                    className="py-3.5 flex flex-wrap items-center justify-between gap-4"
                   >
-                    Start Revision Block
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">
+                        {item.subjectName} · {item.topicName}
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                        Recommended Interval: {item.intervalDays} day(s) · Due:{' '}
+                        {new Date(item.nextRevisionDueAt).toISOString().split('T')[0]} · Gap:{' '}
+                        {item.knowledgeGapScore}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onStartExamPreset('neet-pg-tutor-mode', {
+                          subjects: [resolveSubjectSlug(item.subjectName)],
+                          questionCount: 10,
+                          mode: 'practice',
+                        })
+                      }
+                      className="px-3 py-1.5 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer"
+                    >
+                      Start Revision Block
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Bookmarked Questions (5 cols) */}
@@ -976,6 +1129,7 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
               </div>
               {bookmarks.length > 0 && (
                 <button
+                  type="button"
                   onClick={() =>
                     onStartExamPreset('neet-pg-tutor-mode', {
                       onlyBookmarked: true,
@@ -990,26 +1144,32 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
               )}
             </div>
 
-            <div className="divide-y divide-slate-200 max-h-[420px] overflow-y-auto">
-              {bookmarks.map((bm: any) => (
-                <div key={bm.bookmarkId} className="py-3 space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-mono font-bold text-slate-900">
-                      {bm.questionCode}
-                    </span>
-                    <span className="text-slate-500">
-                      {bm.subjectName} · {bm.topicName}
-                    </span>
+            {bookmarks.length === 0 ? (
+              <div className="p-8 rounded-lg border border-dashed border-slate-200 bg-slate-50 text-center text-xs text-slate-500">
+                No bookmarked questions yet. Use the Bookmark button inside any exam or post-exam review to save high-yield questions.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-200 max-h-[420px] overflow-y-auto">
+                {bookmarks.map((bm: any) => (
+                  <div key={bm.bookmarkId} className="py-3 space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-mono font-bold text-slate-900">
+                        {bm.questionCode}
+                      </span>
+                      <span className="text-slate-500">
+                        {bm.subjectName} · {bm.topicName}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-700 line-clamp-2">
+                      {bm.questionText}
+                    </p>
+                    {bm.notes && (
+                      <p className="text-[11px] text-amber-800 italic">Note: {bm.notes}</p>
+                    )}
                   </div>
-                  <p className="text-xs text-slate-700 line-clamp-2">
-                    {bm.questionText}
-                  </p>
-                  {bm.notes && (
-                    <p className="text-[11px] text-amber-800 italic">Note: {bm.notes}</p>
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

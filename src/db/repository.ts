@@ -32,9 +32,8 @@ import {
   CORE_ARCHETYPE_QUESTIONS,
   generateFull200QuestionBank,
   DEFAULT_NEET_PG_FULL_MOCK_CONFIG,
-  NEET_PG_FULL_MOCK_1_CONFIG,
-  NEET_PG_FULL_MOCK_2_CONFIG,
-  INICET_SUPER_MOCK_3_CONFIG,
+  DEFAULT_INICET_FULL_MOCK_CONFIG,
+  BUILTIN_MOCK_CONFIGS,
   BUILTIN_MOCK_PAPERS_METADATA,
   RAPID_SECTIONAL_MOCK_CONFIG,
   TUTOR_PRACTICE_CONFIG,
@@ -77,54 +76,44 @@ export async function ensureSeeded(defaultUserUid = 'demo-candidate-01') {
     }
 
     const existingConfigs = await db.select().from(examConfigs);
-    const existingKeys = new Set(existingConfigs.map((c) => c.configKey));
-    const configsToSeed = [
-      {
-        configKey: DEFAULT_NEET_PG_FULL_MOCK_CONFIG.examId,
-        configVersion: DEFAULT_NEET_PG_FULL_MOCK_CONFIG.configVersion,
-        examName: DEFAULT_NEET_PG_FULL_MOCK_CONFIG.examName,
-        mode: DEFAULT_NEET_PG_FULL_MOCK_CONFIG.mode,
-        configJson: DEFAULT_NEET_PG_FULL_MOCK_CONFIG,
-      },
-      {
-        configKey: NEET_PG_FULL_MOCK_1_CONFIG.examId,
-        configVersion: NEET_PG_FULL_MOCK_1_CONFIG.configVersion,
-        examName: NEET_PG_FULL_MOCK_1_CONFIG.examName,
-        mode: NEET_PG_FULL_MOCK_1_CONFIG.mode,
-        configJson: NEET_PG_FULL_MOCK_1_CONFIG,
-      },
-      {
-        configKey: NEET_PG_FULL_MOCK_2_CONFIG.examId,
-        configVersion: NEET_PG_FULL_MOCK_2_CONFIG.configVersion,
-        examName: NEET_PG_FULL_MOCK_2_CONFIG.examName,
-        mode: NEET_PG_FULL_MOCK_2_CONFIG.mode,
-        configJson: NEET_PG_FULL_MOCK_2_CONFIG,
-      },
-      {
-        configKey: INICET_SUPER_MOCK_3_CONFIG.examId,
-        configVersion: INICET_SUPER_MOCK_3_CONFIG.configVersion,
-        examName: INICET_SUPER_MOCK_3_CONFIG.examName,
-        mode: INICET_SUPER_MOCK_3_CONFIG.mode,
-        configJson: INICET_SUPER_MOCK_3_CONFIG,
-      },
-      {
-        configKey: RAPID_SECTIONAL_MOCK_CONFIG.examId,
-        configVersion: RAPID_SECTIONAL_MOCK_CONFIG.configVersion,
-        examName: RAPID_SECTIONAL_MOCK_CONFIG.examName,
-        mode: RAPID_SECTIONAL_MOCK_CONFIG.mode,
-        configJson: RAPID_SECTIONAL_MOCK_CONFIG,
-      },
-      {
-        configKey: TUTOR_PRACTICE_CONFIG.examId,
-        configVersion: TUTOR_PRACTICE_CONFIG.configVersion,
-        examName: TUTOR_PRACTICE_CONFIG.examName,
-        mode: TUTOR_PRACTICE_CONFIG.mode,
-        configJson: TUTOR_PRACTICE_CONFIG,
-      },
-    ].filter((c) => !existingKeys.has(c.configKey));
+    const existingByKey = new Map(existingConfigs.map((c) => [c.configKey, c]));
 
-    if (configsToSeed.length > 0) {
-      await db.insert(examConfigs).values(configsToSeed).onConflictDoNothing();
+    const allBuiltInConfigs: ExamConfig[] = [
+      DEFAULT_NEET_PG_FULL_MOCK_CONFIG,
+      DEFAULT_INICET_FULL_MOCK_CONFIG,
+      ...BUILTIN_MOCK_CONFIGS,
+      RAPID_SECTIONAL_MOCK_CONFIG,
+      TUTOR_PRACTICE_CONFIG,
+    ];
+
+    const configsToInsert = allBuiltInConfigs
+      .filter((cfg) => !existingByKey.has(cfg.examId))
+      .map((cfg) => ({
+        configKey: cfg.examId,
+        configVersion: cfg.configVersion,
+        examName: cfg.examName,
+        mode: cfg.mode,
+        configJson: cfg,
+      }));
+
+    if (configsToInsert.length > 0) {
+      await db.insert(examConfigs).values(configsToInsert).onConflictDoNothing();
+    }
+
+    // Upgrade any previously seeded built-in v1.0 configs to the validated NBEMS 2026 / AIIMS INI-CET v2.0 specs
+    for (const cfg of allBuiltInConfigs) {
+      const existing = existingByKey.get(cfg.examId);
+      if (existing && existing.configVersion !== cfg.configVersion) {
+        await db
+          .update(examConfigs)
+          .set({
+            configVersion: cfg.configVersion,
+            examName: cfg.examName,
+            mode: cfg.mode,
+            configJson: cfg,
+          })
+          .where(eq(examConfigs.configKey, cfg.examId));
+      }
     }
 
     const existingQuestions = await db.select().from(questions);
@@ -134,9 +123,15 @@ export async function ensureSeeded(defaultUserUid = 'demo-candidate-01') {
       const toInsert = full200.filter((q) => !existingCodes.has(q.questionId));
 
       if (toInsert.length > 0) {
-        // Seed taxonomy systems/topics
-        const sysSeen = new Set<string>();
-        const topSeen = new Set<string>();
+        // Seed taxonomy systems/topics idempotently without duplicating existing rows
+        const existingSystems = await db.select().from(systems);
+        const existingTopics = await db.select().from(topics);
+        const sysSeen = new Set<string>(
+          existingSystems.map((s) => `${s.subjectSlug}:${s.slug}`)
+        );
+        const topSeen = new Set<string>(
+          existingTopics.map((t) => `${t.subjectSlug}:${t.systemSlug}:${t.slug}`)
+        );
         const sysBatch: Array<{ subjectSlug: string; slug: string; name: string }> = [];
         const topBatch: Array<{
           subjectSlug: string;
@@ -146,16 +141,18 @@ export async function ensureSeeded(defaultUserUid = 'demo-candidate-01') {
         }> = [];
 
         for (const item of CORE_ARCHETYPE_QUESTIONS) {
-          if (!sysSeen.has(item.systemId)) {
-            sysSeen.add(item.systemId);
+          const sysKey = `${item.subjectId}:${item.systemId}`;
+          if (!sysSeen.has(sysKey)) {
+            sysSeen.add(sysKey);
             sysBatch.push({
               subjectSlug: item.subjectId,
               slug: item.systemId,
               name: item.systemName || item.systemId,
             });
           }
-          if (!topSeen.has(item.topicId)) {
-            topSeen.add(item.topicId);
+          const topKey = `${item.subjectId}:${item.systemId}:${item.topicId}`;
+          if (!topSeen.has(topKey)) {
+            topSeen.add(topKey);
             topBatch.push({
               subjectSlug: item.subjectId,
               systemSlug: item.systemId,
@@ -165,10 +162,10 @@ export async function ensureSeeded(defaultUserUid = 'demo-candidate-01') {
           }
         }
         if (sysBatch.length > 0) {
-          await db.insert(systems).values(sysBatch);
+          await db.insert(systems).values(sysBatch).onConflictDoNothing();
         }
         if (topBatch.length > 0) {
-          await db.insert(topics).values(topBatch);
+          await db.insert(topics).values(topBatch).onConflictDoNothing();
         }
 
         // Batch insert questions
@@ -800,17 +797,21 @@ export async function startNewExamSession(params: {
   try {
     await ensureSeeded(params.userUid);
 
+    // Finalize any previously abandoned or expired in_progress sessions for this user
+    // so starting a new exam never accumulates multiple simultaneous "Resume" states
+    await reconcileUserActiveSessions(params.userUid, true);
+
     let baseConfig: ExamConfig = DEFAULT_NEET_PG_FULL_MOCK_CONFIG;
+    const builtInMatch = BUILTIN_MOCK_CONFIGS.find((c) => c.examId === params.configKey);
+
     if (params.configKey === 'neet-pg-mini-sectional') {
       baseConfig = RAPID_SECTIONAL_MOCK_CONFIG;
     } else if (params.configKey === 'neet-pg-tutor-mode') {
       baseConfig = TUTOR_PRACTICE_CONFIG;
-    } else if (params.configKey === 'neet-pg-full-mock-1') {
-      baseConfig = NEET_PG_FULL_MOCK_1_CONFIG;
-    } else if (params.configKey === 'neet-pg-full-mock-2') {
-      baseConfig = NEET_PG_FULL_MOCK_2_CONFIG;
-    } else if (params.configKey === 'inicet-super-mock-3') {
-      baseConfig = INICET_SUPER_MOCK_3_CONFIG;
+    } else if (params.configKey === 'inicet-full-mock') {
+      baseConfig = DEFAULT_INICET_FULL_MOCK_CONFIG;
+    } else if (builtInMatch) {
+      baseConfig = builtInMatch;
     } else if (params.configKey) {
       const [customCfg] = await db
         .select()
@@ -819,6 +820,25 @@ export async function startNewExamSession(params: {
       if (customCfg) {
         baseConfig = customCfg.configJson as ExamConfig;
       }
+    }
+
+    if (params.customConfig) {
+      baseConfig = {
+        ...baseConfig,
+        ...params.customConfig,
+        pattern: {
+          ...baseConfig.pattern,
+          ...(params.customConfig.pattern || {}),
+        },
+        markingScheme: {
+          ...baseConfig.markingScheme,
+          ...(params.customConfig.markingScheme || {}),
+        },
+        settings: {
+          ...baseConfig.settings,
+          ...(params.customConfig.settings || {}),
+        },
+      };
     }
 
     // Fetch candidate questions matching filters
@@ -843,8 +863,12 @@ export async function startNewExamSession(params: {
         .from(bookmarks)
         .where(eq(bookmarks.userUid, params.userUid));
       const bmIds = new Set(userBms.map((b) => b.questionId));
-      const filtered = allPublished.filter((q) => bmIds.has(q.id));
-      if (filtered.length > 0) allPublished = filtered;
+      allPublished = allPublished.filter((q) => bmIds.has(q.id));
+      if (allPublished.length === 0) {
+        throw new Error(
+          'No bookmarked questions match your selected filters yet. Bookmark questions during an exam or review first.'
+        );
+      }
     }
     if (params.filters?.onlyIncorrect) {
       // Find questions previously answered incorrectly by this user
@@ -852,6 +876,7 @@ export async function startNewExamSession(params: {
         .select()
         .from(testSessions)
         .where(eq(testSessions.userUid, params.userUid));
+      const wrongQIds = new Set<number>();
       if (userSessions.length > 0) {
         const sIds = userSessions.map((s) => s.id);
         const tqs = await db
@@ -863,21 +888,62 @@ export async function startNewExamSession(params: {
           .from(studentResponses)
           .where(inArray(studentResponses.sessionId, sIds));
         const respMap = new Map(resps.map((r) => [r.testQuestionId, r]));
-        const wrongQIds = new Set<number>();
         for (const tq of tqs) {
           const r = respMap.get(tq.id);
           if (r?.savedOption && r.savedOption !== tq.correctOptionSnapshot) {
             wrongQIds.add(tq.questionId);
           }
         }
-        const filtered = allPublished.filter((q) => wrongQIds.has(q.id));
-        if (filtered.length > 0) allPublished = filtered;
+      }
+      allPublished = allPublished.filter((q) => wrongQIds.has(q.id));
+      if (allPublished.length === 0) {
+        throw new Error(
+          'No previously incorrect questions match your selected filters yet. Complete a test to build your mistake bank.'
+        );
       }
     }
 
     const desiredCount =
       params.filters?.questionCount ||
       baseConfig.pattern.totalQuestions;
+
+    // Order questions deterministically for scheduled numbered Grand Mocks (so each of the
+    // 10 NEET-PG and 10 INI-CET mocks stays a consistent benchmark paper), while using
+    // true randomized Fisher-Yates shuffling for repeatable sprints, tutor sessions, and custom tests.
+    const preferredCodes = new Set<string>(
+      Array.isArray((baseConfig as any).preferredQuestionCodes)
+        ? (baseConfig as any).preferredQuestionCodes
+        : []
+    );
+
+    const effectiveKey = params.configKey || baseConfig.examId || '';
+    const isScheduledBenchmarkMock =
+      !params.filters &&
+      (effectiveKey.startsWith('neet-pg-full-mock-') ||
+        effectiveKey.startsWith('inicet-full-mock-') ||
+        preferredCodes.size > 0);
+
+    let orderedPool: typeof allPublished;
+    if (isScheduledBenchmarkMock) {
+      orderedPool = deterministicShuffleBySeed(
+        allPublished,
+        effectiveKey || 'default-seed'
+      );
+    } else {
+      orderedPool = [...allPublished];
+      for (let i = orderedPool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [orderedPool[i], orderedPool[j]] = [orderedPool[j], orderedPool[i]];
+      }
+    }
+
+    if (preferredCodes.size > 0) {
+      const preferredFirst = orderedPool.filter((q) => preferredCodes.has(q.questionCode));
+      const remainingPool = orderedPool.filter((q) => !preferredCodes.has(q.questionCode));
+      allPublished = [...preferredFirst, ...remainingPool];
+    } else {
+      allPublished = orderedPool;
+    }
 
     const selectedQuestions = allPublished.slice(
       0,
@@ -894,15 +960,23 @@ export async function startNewExamSession(params: {
         ? params.filters.sectional
         : baseConfig.pattern.sectional && actualTotal >= 5;
 
+    const baseDurationSec = baseConfig.pattern?.durationSeconds;
     const totalDurationSec = params.filters?.durationMinutes
       ? params.filters.durationMinutes * 60
+      : baseDurationSec && baseDurationSec > 0 && actualTotal === baseConfig.pattern.totalQuestions
+      ? baseDurationSec
       : actualTotal === 200
       ? 12600
-      : actualTotal * 63;
+      : Math.max(60, actualTotal * 63);
 
     let sectionsConfig = baseConfig.pattern.sections;
     if (isSectional) {
-      const secCount = Math.min(5, actualTotal);
+      const secCount = Math.min(
+        baseConfig.pattern?.sections?.length && !params.filters?.questionCount
+          ? baseConfig.pattern.sections.length
+          : 5,
+        actualTotal
+      );
       const basePerSec = Math.floor(actualTotal / secCount);
       const remainder = actualTotal % secCount;
       const baseDurSec = Math.floor(totalDurationSec / secCount);
@@ -911,7 +985,10 @@ export async function startNewExamSession(params: {
       const secNames = ['Section A', 'Section B', 'Section C', 'Section D', 'Section E'];
       sectionsConfig = Array.from({ length: secCount }, (_, idx) => ({
         sectionId: `section-${String.fromCharCode(97 + idx)}`,
-        name: secNames[idx] || `Section ${idx + 1}`,
+        name:
+          (!params.filters?.questionCount && baseConfig.pattern?.sections?.[idx]?.name) ||
+          secNames[idx] ||
+          `Section ${idx + 1}`,
         questionCount: basePerSec + (idx < remainder ? 1 : 0),
         durationSeconds: baseDurSec + (idx === secCount - 1 ? durRemainder : 0),
         allowReturnAfterLock: false,
@@ -1136,6 +1213,9 @@ export async function getExamSessionState(sessionId: number, userUid: string) {
       .where(eq(testSessions.id, sessionId));
 
     if (!session) throw new Error('Examination session not found.');
+    if (session.userUid !== userUid) {
+      throw new Error('Unauthorized access to examination session.');
+    }
 
     const sections = await db
       .select()
@@ -1144,25 +1224,27 @@ export async function getExamSessionState(sessionId: number, userUid: string) {
     sections.sort((a, b) => a.sectionIndex - b.sectionIndex);
 
     // Check server-side timer auto-transitions if session is in_progress
+    // IMPORTANT: Check overall exam deadline FIRST so an expired exam submits immediately
+    // rather than unlocking a fresh section past overallDeadlineAt.
     const now = new Date();
     const config = session.configSnapshotJson as ExamConfig;
     let activeSecIdx = session.activeSectionIndex;
 
     if (session.status === 'in_progress') {
+      if (now >= session.overallDeadlineAt) {
+        await submitExamSession(sessionId, userUid, true);
+        return getExamSessionState(sessionId, userUid);
+      }
+
       const currentSec = sections[activeSecIdx];
       if (
         config.pattern.sectional &&
         currentSec &&
         currentSec.deadlineAt &&
-        now > currentSec.deadlineAt
+        now >= currentSec.deadlineAt
       ) {
         // Auto-lock expired section and open next section or auto-submit
         await transitionToNextSection(sessionId, userUid, true);
-        return getExamSessionState(sessionId, userUid);
-      }
-
-      if (now > session.overallDeadlineAt) {
-        await submitExamSession(sessionId, userUid, true);
         return getExamSessionState(sessionId, userUid);
       }
     }
@@ -1302,6 +1384,9 @@ export async function recordQuestionMutation(params: {
       .where(eq(testSessions.id, params.sessionId));
 
     if (!session) throw new Error('Session not found.');
+    if (session.userUid !== params.userUid) {
+      throw new Error('Unauthorized modification of examination session.');
+    }
     if (session.status !== 'in_progress') {
       throw new Error('Cannot modify responses in a completed examination.');
     }
@@ -1540,6 +1625,9 @@ export async function transitionToNextSection(
     if (!session || session.status !== 'in_progress') {
       throw new Error('Active session not found.');
     }
+    if (session.userUid !== userUid) {
+      throw new Error('Unauthorized section transition request.');
+    }
 
     const sections = await db
       .select()
@@ -1584,13 +1672,15 @@ export async function transitionToNextSection(
     }
 
     const nextIdx = currentIdx + 1;
-    if (nextIdx >= sections.length) {
-      // All sections finished -> Submit examination
+    if (nextIdx >= sections.length || now >= session.overallDeadlineAt) {
+      // All sections finished or overall exam time expired -> Submit examination
       return await submitExamSession(sessionId, userUid, isAutoTimeout);
     }
 
     const nextSec = sections[nextIdx];
-    const nextDeadline = new Date(now.getTime() + nextSec.durationSeconds * 1000);
+    const rawNextDeadlineMs = now.getTime() + nextSec.durationSeconds * 1000;
+    const cappedDeadlineMs = Math.min(rawNextDeadlineMs, session.overallDeadlineAt.getTime());
+    const nextDeadline = new Date(cappedDeadlineMs);
 
     await db
       .update(testSections)
@@ -1645,7 +1735,10 @@ export async function transitionToNextSection(
     return { transitionedToSection: nextIdx, submitted: false };
   } catch (error) {
     console.error('Database query failed in transitionToNextSection:', error);
-    throw new Error('Failed to transition examination section.', { cause: error });
+    throw new Error(
+      error instanceof Error ? error.message : 'Failed to transition examination section.',
+      { cause: error }
+    );
   }
 }
 
@@ -1660,6 +1753,9 @@ export async function submitExamSession(
       .from(testSessions)
       .where(eq(testSessions.id, sessionId));
     if (!session) throw new Error('Session not found.');
+    if (session.userUid !== userUid) {
+      throw new Error('Unauthorized examination submission request.');
+    }
 
     // Idempotent duplicate submission protection
     if (session.status === 'submitted' || session.status === 'auto_submitted') {
@@ -1703,13 +1799,19 @@ export async function submitExamSession(
     return { submitted: true, status: finalStatus, analytics };
   } catch (error) {
     console.error('Database query failed in submitExamSession:', error);
-    throw new Error('Failed to submit examination session.', { cause: error });
+    throw new Error(
+      error instanceof Error ? error.message : 'Failed to submit examination session.',
+      { cause: error }
+    );
   }
 }
 
 export async function getAggregatedUserAnalytics(userUid: string) {
   try {
     await ensureSeeded(userUid);
+
+    // Auto-finalize any expired in_progress sessions before compiling dashboard metrics
+    await reconcileUserActiveSessions(userUid, false);
 
     const results = await db
       .select()
@@ -1811,6 +1913,158 @@ export async function getAggregatedUserAnalytics(userUid: string) {
       };
     });
 
+    // Aggregate cumulative subject-wise mastery across ALL completed sessions for all 19 NEET PG subjects
+    const subjAggMap = new Map<
+      string,
+      {
+        subjectSlug: string;
+        subjectName: string;
+        code: string;
+        orderIndex: number;
+        totalQuestions: number;
+        attempted: number;
+        correct: number;
+        incorrect: number;
+        unattempted: number;
+        netScore: number;
+        maxMarks: number;
+        totalTimeWeighted: number;
+        guessCountWeighted: number;
+        sureAccWeighted: number;
+        sureWeight: number;
+        mainGuessAccWeighted: number;
+        mainGuessWeight: number;
+        sessionsTested: number;
+      }
+    >();
+
+    for (const sMeta of NEET_PG_SUBJECTS) {
+      subjAggMap.set(sMeta.slug, {
+        subjectSlug: sMeta.slug,
+        subjectName: sMeta.name,
+        code: sMeta.code,
+        orderIndex: sMeta.orderIndex,
+        totalQuestions: 0,
+        attempted: 0,
+        correct: 0,
+        incorrect: 0,
+        unattempted: 0,
+        netScore: 0,
+        maxMarks: 0,
+        totalTimeWeighted: 0,
+        guessCountWeighted: 0,
+        sureAccWeighted: 0,
+        sureWeight: 0,
+        mainGuessAccWeighted: 0,
+        mainGuessWeight: 0,
+        sessionsTested: 0,
+      });
+    }
+
+    for (const r of results) {
+      const breakdown = Array.isArray(r.subjectBreakdownJson)
+        ? (r.subjectBreakdownJson as any[])
+        : [];
+      for (const item of breakdown) {
+        const key = item.subjectSlug;
+        const existing = subjAggMap.get(key) || {
+          subjectSlug: key,
+          subjectName: item.subjectName || key,
+          code: String(item.subjectName || key).slice(0, 4).toUpperCase(),
+          orderIndex: 99,
+          totalQuestions: 0,
+          attempted: 0,
+          correct: 0,
+          incorrect: 0,
+          unattempted: 0,
+          netScore: 0,
+          maxMarks: 0,
+          totalTimeWeighted: 0,
+          guessCountWeighted: 0,
+          sureAccWeighted: 0,
+          sureWeight: 0,
+          mainGuessAccWeighted: 0,
+          mainGuessWeight: 0,
+          sessionsTested: 0,
+        };
+        const qCount = Number(item.totalQuestions || 0);
+        const att = Number(item.attempted || 0);
+        const guessPct = Number(item.guessPercentage || 0);
+        const estGuesses = (att * guessPct) / 100;
+        const estSure = Math.max(0, att - estGuesses);
+
+        existing.totalQuestions += qCount;
+        existing.attempted += att;
+        existing.correct += Number(item.correct || 0);
+        existing.incorrect += Number(item.incorrect || 0);
+        existing.unattempted += Number(item.unattempted || 0);
+        existing.netScore += Number(item.netScore || 0);
+        existing.maxMarks += Number(item.maxMarks || qCount * 4);
+        existing.totalTimeWeighted += Number(item.avgTimeSeconds || 0) * Math.max(1, att);
+        existing.guessCountWeighted += estGuesses;
+        existing.sureAccWeighted += Number(item.sureAccuracy || 0) * estSure;
+        existing.sureWeight += estSure;
+        existing.mainGuessAccWeighted += Number(item.mainGuessAccuracy || 0) * estGuesses;
+        existing.mainGuessWeight += estGuesses;
+        existing.sessionsTested += 1;
+        subjAggMap.set(key, existing);
+      }
+    }
+
+    const subjectMasteryAll = Array.from(subjAggMap.values())
+      .sort((a, b) => a.orderIndex - b.orderIndex)
+      .map((s) => {
+        const accuracy =
+          s.attempted > 0 ? Number(((s.correct / s.attempted) * 100).toFixed(1)) : 0;
+        const attemptRate =
+          s.totalQuestions > 0
+            ? Number(((s.attempted / s.totalQuestions) * 100).toFixed(1))
+            : 0;
+        const avgTimeSeconds =
+          s.attempted > 0 ? Number((s.totalTimeWeighted / s.attempted).toFixed(1)) : 0;
+        const guessPercentage =
+          s.attempted > 0
+            ? Number(((s.guessCountWeighted / s.attempted) * 100).toFixed(1))
+            : 0;
+        const sureAccuracy =
+          s.sureWeight > 0 ? Number((s.sureAccWeighted / s.sureWeight).toFixed(1)) : 0;
+        const mainGuessAccuracy =
+          s.mainGuessWeight > 0
+            ? Number((s.mainGuessAccWeighted / s.mainGuessWeight).toFixed(1))
+            : 0;
+        const masteryTier =
+          s.attempted === 0
+            ? 'unattempted'
+            : accuracy >= 75
+            ? 'mastered'
+            : accuracy >= 60
+            ? 'proficient'
+            : accuracy >= 45
+            ? 'developing'
+            : 'critical';
+
+        return {
+          subjectSlug: s.subjectSlug,
+          subjectName: s.subjectName,
+          code: s.code,
+          totalQuestions: s.totalQuestions,
+          attempted: s.attempted,
+          correct: s.correct,
+          incorrect: s.incorrect,
+          unattempted: s.unattempted,
+          accuracy,
+          attemptRate,
+          netScore: s.netScore,
+          maxMarks: s.maxMarks,
+          avgTimeSeconds,
+          guessPercentage,
+          sureAccuracy,
+          mainGuessAccuracy,
+          sessionsTested: s.sessionsTested,
+          masteryTier,
+        };
+      });
+
     return {
       overview: {
         testsAttempted: totalTests,
@@ -1838,6 +2092,7 @@ export async function getAggregatedUserAnalytics(userUid: string) {
             answerChangeIntelligence: latestResult.answerChangeAnalyticsJson,
           }
         : null,
+      subjectMasteryAll,
       trendSeries,
       recommendations,
       revisionQueue: revisionsQueue,
@@ -1854,7 +2109,14 @@ export async function getAggregatedUserAnalytics(userUid: string) {
           startedAt: s.startedAt.toISOString(),
           submittedAt: s.submittedAt ? s.submittedAt.toISOString() : null,
           score: res?.score ?? null,
-          maxMarks: res?.maxMarks ?? s.totalQuestions * 4,
+          maxMarks:
+            res?.maxMarks ??
+            Number(
+              (
+                s.totalQuestions *
+                (((s.configSnapshotJson as any)?.markingScheme?.correct as number) || 4)
+              ).toFixed(2)
+            ),
           accuracy: res?.accuracy ?? null,
         };
       }),
@@ -1865,9 +2127,65 @@ export async function getAggregatedUserAnalytics(userUid: string) {
   }
 }
 
+function deterministicShuffleBySeed<T>(items: T[], seedStr: string): T[] {
+  let hash = 2166136261;
+  for (let i = 0; i < seedStr.length; i++) {
+    hash ^= seedStr.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i--) {
+    hash ^= hash << 13;
+    hash ^= hash >>> 17;
+    hash ^= hash << 5;
+    const j = Math.abs(hash) % (i + 1);
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+  return arr;
+}
+
+/**
+ * Cleans up expired in_progress sessions and prevents multiple concurrent in_progress sessions.
+ * - If finalizeAllLive is true (called right before starting a new exam), all prior in_progress
+ *   sessions for the user are cleanly auto-submitted so only the newly launched exam is active.
+ * - If finalizeAllLive is false (called when viewing Mock Series or Dashboard), all expired
+ *   sessions are auto-submitted AND if multiple unexpired sessions somehow exist, only the
+ *   single most recently started unexpired session remains active.
+ */
+async function reconcileUserActiveSessions(userUid: string, finalizeAllLive: boolean) {
+  const activeSessions = await db
+    .select()
+    .from(testSessions)
+    .where(and(eq(testSessions.userUid, userUid), eq(testSessions.status, 'in_progress')))
+    .orderBy(desc(testSessions.startedAt));
+
+  if (activeSessions.length === 0) return;
+
+  const now = new Date();
+  let keptLiveSession = false;
+
+  for (const sess of activeSessions) {
+    const isExpired = now >= sess.overallDeadlineAt;
+    if (finalizeAllLive || isExpired || keptLiveSession) {
+      try {
+        await submitExamSession(sess.id, userUid, true);
+      } catch (err) {
+        console.warn(`Could not auto-finalize session ${sess.id}:`, err);
+      }
+    } else {
+      keptLiveSession = true;
+    }
+  }
+}
+
 export async function getMockPapersList(userUid: string): Promise<MockPaperSummary[]> {
   try {
     await ensureSeeded(userUid);
+
+    // 0. Auto-finalize expired sessions and guarantee at most 1 live session
+    await reconcileUserActiveSessions(userUid, false);
 
     // 1. Fetch user's sessions to compute personal attempt state for each mock
     const userSessions = await db
@@ -1884,35 +2202,42 @@ export async function getMockPapersList(userUid: string): Promise<MockPaperSumma
 
     const resultMap = new Map(results.map((r) => [r.sessionId, r]));
 
-    const getAttemptForExam = (configKey: string, examName: string) => {
-      const matched = userSessions.find(
-        (s) =>
-          (s.configSnapshotJson as any)?.examId === configKey ||
-          s.examName.toLowerCase().includes(configKey.toLowerCase()) ||
-          s.examName.toLowerCase().includes(examName.toLowerCase().slice(0, 24))
+    // STRICT exact examId match (never fuzzy prefix match!) so one active session NEVER leaks onto other papers
+    const getAttemptForExam = (configKey: string, defaultCorrectMarks: number) => {
+      const exactMatches = userSessions.filter(
+        (s) => (s.configSnapshotJson as any)?.examId === configKey
       );
-      if (!matched) return { status: 'not_attempted' as const };
-      const res = resultMap.get(matched.id);
-      if (matched.status === 'in_progress') {
+      if (exactMatches.length === 0) return { status: 'not_attempted' as const };
+
+      // Prefer a genuinely live unexpired session if one exists for THIS exact paper; otherwise latest completed attempt
+      const liveMatch = exactMatches.find((s) => s.status === 'in_progress');
+      if (liveMatch) {
         return {
           status: 'in_progress' as const,
-          lastAttemptSessionId: matched.id,
-          attemptedAt: matched.startedAt.toISOString(),
+          lastAttemptSessionId: liveMatch.id,
+          attemptedAt: liveMatch.startedAt.toISOString(),
         };
       }
+
+      const latestCompleted = exactMatches[0];
+      const res = resultMap.get(latestCompleted.id);
+      const schemeCorrect =
+        ((latestCompleted.configSnapshotJson as any)?.markingScheme?.correct as number) ||
+        defaultCorrectMarks;
+
       return {
         status: 'completed' as const,
         latestScore: res?.score ?? 0,
-        maxMarks: res?.maxMarks ?? matched.totalQuestions * 4,
+        maxMarks: res?.maxMarks ?? Number((latestCompleted.totalQuestions * schemeCorrect).toFixed(2)),
         accuracy: res?.accuracy ?? 0,
-        lastAttemptSessionId: matched.id,
-        attemptedAt: (matched.submittedAt || matched.startedAt).toISOString(),
+        lastAttemptSessionId: latestCompleted.id,
+        attemptedAt: (latestCompleted.submittedAt || latestCompleted.startedAt).toISOString(),
       };
     };
 
-    // 2. Built-in 3 Full Mock Papers
+    // 2. Built-in 20 Full Mock Papers (10 NEET-PG 2026 + 10 INI-CET)
     const builtins: MockPaperSummary[] = BUILTIN_MOCK_PAPERS_METADATA.map((b) => {
-      const attempt = getAttemptForExam(b.configKey, b.title);
+      const attempt = getAttemptForExam(b.configKey, b.markingScheme?.correct ?? 4);
       return {
         ...b,
         isUserImported: false,
@@ -1924,17 +2249,27 @@ export async function getMockPapersList(userUid: string): Promise<MockPaperSumma
     const allConfigs = await db.select().from(examConfigs);
     const standardKeys = new Set([
       'neet-pg-full-mock',
+      'inicet-full-mock',
       'neet-pg-mini-sectional',
       'neet-pg-tutor-mode',
-      'neet-pg-full-mock-1',
-      'neet-pg-full-mock-2',
       'inicet-super-mock-3',
+      ...BUILTIN_MOCK_PAPERS_METADATA.map((b) => b.configKey),
     ]);
     const importedConfigs = allConfigs.filter((c) => !standardKeys.has(c.configKey));
 
     const importedPapers: MockPaperSummary[] = importedConfigs.map((c) => {
       const cfg = c.configJson as any;
-      const attempt = getAttemptForExam(c.configKey, c.examName);
+      const targetExam = cfg.targetExam || 'NEET-PG';
+      const defaultScheme =
+        targetExam === 'INI-CET'
+          ? { correct: 1, incorrect: -1 / 3, unattempted: 0 }
+          : { correct: 4, incorrect: -1, unattempted: 0 };
+      const scheme = cfg.markingScheme || defaultScheme;
+      const totalQ = cfg.pattern?.totalQuestions || (targetExam === 'INI-CET' ? 200 : 180);
+      const sectionCount = cfg.pattern?.sections?.length || (targetExam === 'INI-CET' ? 4 : 5);
+      const firstSec = cfg.pattern?.sections?.[0];
+      const attempt = getAttemptForExam(c.configKey, scheme.correct);
+
       return {
         id: c.configKey,
         configKey: c.configKey,
@@ -1947,10 +2282,16 @@ export async function getMockPapersList(userUid: string): Promise<MockPaperSumma
             day: 'numeric',
             year: 'numeric',
           }),
-        targetExam: cfg.targetExam || 'NEET-PG',
-        totalQuestions: cfg.pattern?.totalQuestions || 200,
-        durationMinutes: Math.round((cfg.pattern?.durationSeconds || 12600) / 60),
-        sectionCount: cfg.pattern?.sections?.length || 5,
+        targetExam,
+        totalQuestions: totalQ,
+        durationMinutes: Math.round((cfg.pattern?.durationSeconds || (targetExam === 'INI-CET' ? 10800 : 12600)) / 60),
+        sectionCount,
+        questionsPerSection: firstSec?.questionCount || Math.round(totalQ / Math.max(1, sectionCount)),
+        sectionDurationMinutes: firstSec?.durationSeconds
+          ? Math.round(firstSec.durationSeconds / 60)
+          : Math.round(((cfg.pattern?.durationSeconds || 12600) / Math.max(1, sectionCount)) / 60),
+        markingScheme: scheme,
+        maxMarks: Number((totalQ * scheme.correct).toFixed(2)),
         tag: cfg.tag || 'User Imported Mock',
         description:
           cfg.description || 'Imported custom multi-sectional mock examination paper.',
@@ -1973,42 +2314,83 @@ export async function importCustomMockPaper(params: {
   const { userUid, packagePayload } = params;
   await ensureSeeded(userUid);
 
-  if (!packagePayload.examName || !packagePayload.examId) {
-    throw new Error('Test package must include examName and examId.');
+  const resolvedExamName = packagePayload.examName || (packagePayload as any).title;
+  if (!resolvedExamName || !packagePayload.examId) {
+    throw new Error('Test package must include examName (or title) and examId.');
   }
+  packagePayload.examName = resolvedExamName;
 
   // 1. If questions array is provided, import questions through bulk import
+  const preferredQuestionCodes: string[] = [];
   if (Array.isArray(packagePayload.questions) && packagePayload.questions.length > 0) {
     const { bulkImportQuestionsAdmin } = await import('./adminRepository.ts');
     await bulkImportQuestionsAdmin(userUid, packagePayload.questions, false);
+    for (const q of packagePayload.questions) {
+      if (q.questionId) preferredQuestionCodes.push(q.questionId);
+    }
   }
 
-  // 2. Build the ExamConfig
-  const totalQuestions =
-    packagePayload.questions?.length ||
-    packagePayload.sections?.reduce((a, s) => a + s.questionCount, 0) ||
-    200;
+  const targetExam = packagePayload.targetExam || 'NEET-PG';
+  const isInicet = targetExam === 'INI-CET';
 
-  const durationSeconds = (packagePayload.durationMinutes || 210) * 60;
+  // 2. Build the ExamConfig consistently so section question counts always sum to totalQuestions
+  const sectionsSum = packagePayload.sections?.reduce((a, s) => a + s.questionCount, 0) || 0;
+  const totalQuestions =
+    sectionsSum > 0
+      ? sectionsSum
+      : packagePayload.questions?.length || (isInicet ? 200 : 180);
+
+  const defaultDurMin = isInicet ? 180 : 210;
+  const durationSeconds = Math.max(60, (packagePayload.durationMinutes || defaultDurMin) * 60);
+
   const sectionsList =
     packagePayload.sectional && packagePayload.sections?.length
-      ? packagePayload.sections.map((s, idx) => ({
-          sectionId: s.sectionId || `section-${idx + 1}`,
-          name: s.name || `Section ${String.fromCharCode(65 + idx)}`,
-          questionCount: s.questionCount,
-          durationSeconds:
-            (s.durationMinutes || Math.round(durationSeconds / 5 / 60)) * 60,
-          allowReturnAfterLock: false,
-        }))
+      ? (() => {
+          const secCount = packagePayload.sections.length;
+          const explicitSecDurs = packagePayload.sections.every(
+            (s) => typeof s.durationMinutes === 'number' && s.durationMinutes > 0
+          );
+          const sumExplicitSec = explicitSecDurs
+            ? packagePayload.sections.reduce((acc, s) => acc + Math.round((s.durationMinutes || 0) * 60), 0)
+            : 0;
+          const useExplicitDurs = explicitSecDurs && sumExplicitSec === durationSeconds;
+
+          const baseDurSec = Math.floor(durationSeconds / secCount);
+          const durRem = durationSeconds % secCount;
+          return packagePayload.sections.map((s, idx) => ({
+            sectionId: s.sectionId || `${isInicet ? 'part' : 'section'}-${idx + 1}`,
+            name: s.name || `${isInicet ? 'Part' : 'Section'} ${String.fromCharCode(65 + idx)}`,
+            questionCount: s.questionCount,
+            durationSeconds: useExplicitDurs
+              ? Math.round((s.durationMinutes || 0) * 60)
+              : baseDurSec + (idx === secCount - 1 ? durRem : 0),
+            allowReturnAfterLock: false,
+          }));
+        })()
       : [
           {
             sectionId: 'section-1',
-            name: 'Section A',
+            name: 'All Questions',
             questionCount: totalQuestions,
             durationSeconds,
-            allowReturnAfterLock: false,
+            allowReturnAfterLock: !packagePayload.sectional,
           },
         ];
+
+  const markingScheme = packagePayload.markingScheme
+    ? {
+        correct: Number(packagePayload.markingScheme.correct) || (isInicet ? 1 : 4),
+        incorrect:
+          typeof packagePayload.markingScheme.incorrect === 'number'
+            ? packagePayload.markingScheme.incorrect
+            : isInicet
+            ? -1 / 3
+            : -1,
+        unattempted: Number(packagePayload.markingScheme.unattempted) || 0,
+      }
+    : isInicet
+    ? { correct: 1, incorrect: -1 / 3, unattempted: 0 }
+    : { correct: 4, incorrect: -1, unattempted: 0 };
 
   const conductedDate =
     packagePayload.date ||
@@ -2023,8 +2405,9 @@ export async function importCustomMockPaper(params: {
     targetExam?: string;
     tag?: string;
     description?: string;
+    preferredQuestionCodes?: string[];
   } = {
-    configVersion: '1.0',
+    configVersion: '2.0',
     examId: packagePayload.examId,
     examName: packagePayload.examName,
     mode: 'exam',
@@ -2036,11 +2419,7 @@ export async function importCustomMockPaper(params: {
       sectional: packagePayload.sectional ?? true,
       sections: sectionsList,
     },
-    markingScheme: {
-      correct: 4,
-      incorrect: -1,
-      unattempted: 0,
-    },
+    markingScheme,
     settings: {
       strictSaveMode: true,
       allowClearResponse: true,
@@ -2051,9 +2430,10 @@ export async function importCustomMockPaper(params: {
       showExplanationDuringExam: false,
     },
     conductedDate,
-    targetExam: packagePayload.targetExam || 'NEET-PG',
+    targetExam,
     tag: packagePayload.tag || 'Custom Test Package',
     description: packagePayload.description || 'Custom imported examination paper.',
+    preferredQuestionCodes,
   };
 
   // 3. Upsert into examConfigs
@@ -2067,13 +2447,14 @@ export async function importCustomMockPaper(params: {
       .update(examConfigs)
       .set({
         examName: packagePayload.examName,
+        configVersion: '2.0',
         configJson: configObj,
       })
       .where(eq(examConfigs.configKey, packagePayload.examId));
   } else {
     await db.insert(examConfigs).values({
       configKey: packagePayload.examId,
-      configVersion: '1.0',
+      configVersion: '2.0',
       examName: packagePayload.examName,
       mode: 'exam',
       configJson: configObj,
@@ -2085,10 +2466,14 @@ export async function importCustomMockPaper(params: {
     configKey: packagePayload.examId,
     title: packagePayload.examName,
     date: conductedDate,
-    targetExam: (packagePayload.targetExam || 'NEET-PG') as any,
+    targetExam: targetExam as any,
     totalQuestions,
     durationMinutes: Math.round(durationSeconds / 60),
     sectionCount: sectionsList.length,
+    questionsPerSection: sectionsList[0]?.questionCount || totalQuestions,
+    sectionDurationMinutes: Math.round((sectionsList[0]?.durationSeconds || durationSeconds) / 60),
+    markingScheme,
+    maxMarks: Number((totalQuestions * markingScheme.correct).toFixed(2)),
     tag: configObj.tag!,
     description: configObj.description!,
     isUserImported: true,

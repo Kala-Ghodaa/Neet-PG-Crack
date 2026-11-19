@@ -147,9 +147,6 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
           >
             <FileCheck2 className="w-4 h-4 shrink-0 text-sky-600" />
             <span className="flex-1">Full Mock Test Series</span>
-            <span className="text-[10px] bg-sky-100 text-sky-800 font-mono px-1.5 py-0.5 rounded font-bold">
-              Dated Mocks
-            </span>
           </button>
 
           <button
@@ -198,7 +195,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-xs font-semibold text-sky-900 hover:bg-sky-50 text-left transition-colors cursor-pointer"
             >
               <Play className="w-4 h-4 shrink-0 text-sky-600 fill-sky-600" />
-              <span className="flex-1">Launch 200-Q Grand Mock 1</span>
+              <span className="flex-1">Launch NEET-PG 180-Q Mock 1</span>
             </button>
 
             <button
@@ -211,9 +208,6 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
             >
               <PlusCircle className="w-4 h-4 shrink-0 text-emerald-600" />
               <span className="flex-1">Import New Test Paper</span>
-              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-mono px-1.5 py-0.5 rounded font-bold">
-                + New
-              </span>
             </button>
 
             <button
@@ -244,7 +238,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
             <span>Switch Profile / Sign In</span>
           </button>
           <div className="text-[10px] text-center text-slate-400 font-mono">
-            PG-Prep Arena v1.0 · Strict NBEMS CBT Engine
+            PG-PREP ARENA · Strict NBEMS CBT Engine
           </div>
         </div>
       </div>
