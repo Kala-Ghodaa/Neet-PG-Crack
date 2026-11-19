@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Menu } from 'lucide-react';
 import {
   apiFetch,
@@ -39,6 +39,8 @@ export default function App() {
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [importModalTab, setImportModalTab] = useState<ImportModalTab>('import');
   const [mocksRefreshKey, setMocksRefreshKey] = useState<number>(0);
+  const [startingExamKey, setStartingExamKey] = useState<string | null>(null);
+  const isStartingExamRef = useRef<boolean>(false);
 
   const openImportModal = (tab: ImportModalTab = 'import') => {
     setImportModalTab(tab);
@@ -67,8 +69,11 @@ export default function App() {
   }, [loadDashboardAndUser]);
 
   const handleStartExamPreset = async (configKey: string, filters?: any) => {
+    if (isStartingExamRef.current) return;
+    isStartingExamRef.current = true;
+    setStartingExamKey(configKey);
+    setError(null);
     try {
-      setLoading(true);
       const res = await apiFetch('/api/v1/exams/start', {
         method: 'POST',
         body: JSON.stringify({ configKey, filters }),
@@ -77,7 +82,8 @@ export default function App() {
     } catch (err: any) {
       setError(err.message || 'Could not start examination');
     } finally {
-      setLoading(false);
+      isStartingExamRef.current = false;
+      setStartingExamKey(null);
     }
   };
 
@@ -127,6 +133,21 @@ export default function App() {
     }
   };
 
+  const handleExamSubmitted = useCallback(
+    async (submittedSessionId: number) => {
+      await loadDashboardAndUser();
+      setMocksRefreshKey((k) => k + 1);
+      setRoute({ view: 'review', sessionId: submittedSessionId });
+    },
+    [loadDashboardAndUser]
+  );
+
+  const handleExitToDashboard = useCallback(async () => {
+    await loadDashboardAndUser();
+    setMocksRefreshKey((k) => k + 1);
+    setRoute({ view: 'dashboard' });
+  }, [loadDashboardAndUser]);
+
   // Full-screen NBEMS Examination Mode hides top marketing/dashboard chrome for zero distraction
   if (route.view === 'exam') {
     return (
@@ -134,16 +155,8 @@ export default function App() {
         <ExamWorkspace
           sessionId={route.sessionId}
           candidateName={userProfile?.displayName || 'Dr. Ananya Sharma'}
-          onExamSubmitted={async (submittedSessionId) => {
-            await loadDashboardAndUser();
-            setMocksRefreshKey((k) => k + 1);
-            setRoute({ view: 'review', sessionId: submittedSessionId });
-          }}
-          onExitToDashboard={async () => {
-            await loadDashboardAndUser();
-            setMocksRefreshKey((k) => k + 1);
-            setRoute({ view: 'dashboard' });
-          }}
+          onExamSubmitted={handleExamSubmitted}
+          onExitToDashboard={handleExitToDashboard}
         />
       </ErrorBoundary>
     );
@@ -298,6 +311,7 @@ export default function App() {
             onOpenImportModal={() => openImportModal('import')}
             onOpenPromptGuide={() => openImportModal('prompts')}
             onBackToDashboard={() => setRoute({ view: 'dashboard' })}
+            startingExamKey={startingExamKey}
             refreshKey={mocksRefreshKey}
           />
         ) : (
@@ -308,9 +322,25 @@ export default function App() {
             onReviewSession={handleOpenOrReviewSession}
             onNavigateToMocks={() => setRoute({ view: 'mocks' })}
             onOpenImportModal={() => openImportModal('import')}
+            startingExamKey={startingExamKey}
           />
         )}
       </div>
+
+      {/* Launching Examination Overlay — instant feedback prevents accidental double-taps */}
+      {startingExamKey && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-lg max-w-sm w-full p-6 text-center space-y-3">
+            <div className="w-8 h-8 border-2 border-slate-900 border-t-transparent rounded-full animate-spin mx-auto" />
+            <div className="text-sm font-bold text-slate-900">
+              Launching Computer-Based Test...
+            </div>
+            <p className="text-xs text-slate-500">
+              Locking server-authoritative timers and snapshotting your question paper.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Quiet Footer */}
       <footer className="border-t border-slate-200 bg-white px-6 py-4 mt-12">

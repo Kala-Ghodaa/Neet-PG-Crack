@@ -30,6 +30,7 @@ interface FullMockTestSeriesProps {
   onOpenImportModal: () => void;
   onOpenPromptGuide?: () => void;
   onBackToDashboard?: () => void;
+  startingExamKey?: string | null;
   refreshKey?: number;
 }
 
@@ -60,6 +61,7 @@ export const FullMockTestSeries: React.FC<FullMockTestSeriesProps> = ({
   onOpenImportModal,
   onOpenPromptGuide,
   onBackToDashboard,
+  startingExamKey = null,
   refreshKey = 0,
 }) => {
   const [mockPapers, setMockPapers] = useState<MockPaperSummary[]>([]);
@@ -476,19 +478,23 @@ export const FullMockTestSeries: React.FC<FullMockTestSeriesProps> = ({
                         <>
                           <button
                             type="button"
+                            disabled={Boolean(startingExamKey)}
                             onClick={() => onReviewSession(paper.lastAttemptSessionId!)}
-                            className="px-3.5 py-2 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                            className="px-3.5 py-2 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
                           >
                             <BarChart3 className="w-3.5 h-3.5" />
                             <span>Analyse</span>
                           </button>
                           <button
                             type="button"
+                            disabled={Boolean(startingExamKey)}
                             onClick={() => onStartExam(paper.configKey)}
-                            className="px-3.5 py-2 rounded border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                            className="px-3.5 py-2 rounded border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
-                            <span>Retake</span>
+                            <span>
+                              {startingExamKey === paper.configKey ? 'Starting...' : 'Retake'}
+                            </span>
                           </button>
                         </>
                       )}
@@ -497,7 +503,10 @@ export const FullMockTestSeries: React.FC<FullMockTestSeriesProps> = ({
                         <>
                           <button
                             type="button"
-                            disabled={finalizingSessionId === paper.lastAttemptSessionId}
+                            disabled={
+                              finalizingSessionId === paper.lastAttemptSessionId ||
+                              Boolean(startingExamKey)
+                            }
                             onClick={() => handleFinishAndAnalyse(paper.lastAttemptSessionId!)}
                             className="px-3.5 py-2 rounded border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
                           >
@@ -510,8 +519,9 @@ export const FullMockTestSeries: React.FC<FullMockTestSeriesProps> = ({
                           </button>
                           <button
                             type="button"
+                            disabled={Boolean(startingExamKey)}
                             onClick={() => onResumeSession(paper.lastAttemptSessionId!)}
-                            className="px-4 py-2 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                            className="px-4 py-2 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
                           >
                             <Play className="w-3.5 h-3.5 fill-white" />
                             <span>Resume</span>
@@ -522,11 +532,14 @@ export const FullMockTestSeries: React.FC<FullMockTestSeriesProps> = ({
                       {!isCompleted && !isInProgress && (
                         <button
                           type="button"
+                          disabled={Boolean(startingExamKey)}
                           onClick={() => onStartExam(paper.configKey)}
-                          className="px-4 py-2 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                          className="px-4 py-2 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
                         >
                           <Play className="w-3.5 h-3.5 fill-white" />
-                          <span>Start Exam</span>
+                          <span>
+                            {startingExamKey === paper.configKey ? 'Starting...' : 'Start Exam'}
+                          </span>
                           <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       )}

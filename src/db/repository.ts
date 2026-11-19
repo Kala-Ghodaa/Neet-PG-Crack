@@ -777,7 +777,46 @@ async function refreshStudyRecommendationsAndRevisions(
   }
 }
 
+// Per-user mutex to serialize concurrent POST /api/v1/exams/start requests (prevents double-click race)
+const startSessionMutexByUser = new Map<string, Promise<any>>();
+
 export async function startNewExamSession(params: {
+  userUid: string;
+  configKey?: string;
+  customConfig?: Partial<ExamConfig>;
+  filters?: {
+    subjects?: string[];
+    difficulty?: string;
+    onlyPyq?: boolean;
+    onlyBookmarked?: boolean;
+    onlyIncorrect?: boolean;
+    questionCount?: number;
+    mode?: 'exam' | 'practice' | 'custom';
+    sectional?: boolean;
+    strictSaveMode?: boolean;
+    durationMinutes?: number;
+  };
+}) {
+  const prevLock = startSessionMutexByUser.get(params.userUid) || Promise.resolve();
+  let releaseLock!: () => void;
+  const currentLock = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+  const chainedLock = prevLock.then(() => currentLock);
+  startSessionMutexByUser.set(params.userUid, chainedLock);
+
+  await prevLock;
+  try {
+    return await executeStartNewExamSession(params);
+  } finally {
+    releaseLock();
+    if (startSessionMutexByUser.get(params.userUid) === chainedLock) {
+      startSessionMutexByUser.delete(params.userUid);
+    }
+  }
+}
+
+async function executeStartNewExamSession(params: {
   userUid: string;
   configKey?: string;
   customConfig?: Partial<ExamConfig>;
@@ -796,6 +835,33 @@ export async function startNewExamSession(params: {
 }) {
   try {
     await ensureSeeded(params.userUid);
+
+    // Idempotency guard: if a double-click / duplicate request arrives within 15s for the exact same
+    // mock configKey while a brand-new unattempted session is already in_progress, return it directly
+    // instead of auto-submitting it and causing the first request to redirect to Post-Exam Analysis!
+    if (params.configKey && !params.filters) {
+      const existingActive = await db
+        .select()
+        .from(testSessions)
+        .where(
+          and(
+            eq(testSessions.userUid, params.userUid),
+            eq(testSessions.status, 'in_progress')
+          )
+        )
+        .orderBy(desc(testSessions.startedAt))
+        .limit(1);
+
+      const recentLive = existingActive[0];
+      if (
+        recentLive &&
+        (recentLive.configSnapshotJson as any)?.examId === params.configKey &&
+        Date.now() - recentLive.startedAt.getTime() < 15000 &&
+        new Date() < recentLive.overallDeadlineAt
+      ) {
+        return recentLive;
+      }
+    }
 
     // Finalize any previously abandoned or expired in_progress sessions for this user
     // so starting a new exam never accumulates multiple simultaneous "Resume" states
@@ -1080,20 +1146,13 @@ export async function startNewExamSession(params: {
       }))
     );
 
-    // Fetch options, explanations, images for selected questions
+    // Fetch options, explanations, images for selected questions in parallel
     const qIds = selectedQuestions.map((q) => q.id);
-    const allOpts = await db
-      .select()
-      .from(questionOptions)
-      .where(inArray(questionOptions.questionId, qIds));
-    const allExps = await db
-      .select()
-      .from(questionExplanations)
-      .where(inArray(questionExplanations.questionId, qIds));
-    const allImgs = await db
-      .select()
-      .from(questionImages)
-      .where(inArray(questionImages.questionId, qIds));
+    const [allOpts, allExps, allImgs] = await Promise.all([
+      db.select().from(questionOptions).where(inArray(questionOptions.questionId, qIds)),
+      db.select().from(questionExplanations).where(inArray(questionExplanations.questionId, qIds)),
+      db.select().from(questionImages).where(inArray(questionImages.questionId, qIds)),
+    ]);
 
     const optsMap = new Map<number, typeof allOpts>();
     for (const o of allOpts) {

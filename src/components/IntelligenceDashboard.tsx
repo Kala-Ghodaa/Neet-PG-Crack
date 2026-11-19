@@ -31,6 +31,7 @@ interface IntelligenceDashboardProps {
   onReviewSession: (sessionId: number) => void;
   onNavigateToMocks?: () => void;
   onOpenImportModal?: () => void;
+  startingExamKey?: string | null;
 }
 
 export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
@@ -40,6 +41,7 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
   onReviewSession,
   onNavigateToMocks,
   onOpenImportModal,
+  startingExamKey = null,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
     'overview' | 'guess_5050' | 'subjects_topics' | 'speed_gaps' | 'revision'
@@ -111,24 +113,34 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
           )}
 
           <button
+            type="button"
+            disabled={Boolean(startingExamKey)}
             onClick={() => onStartExamPreset('neet-pg-full-mock-1')}
-            className="px-4 py-2.5 rounded-md bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="px-4 py-2.5 rounded-md bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
           >
             <Play className="w-3.5 h-3.5 fill-slate-950" />
-            <span>Launch Mock 1 (Oct 18)</span>
+            <span>
+              {startingExamKey === 'neet-pg-full-mock-1' ? 'Starting...' : 'Launch Mock 1 (Oct 18)'}
+            </span>
           </button>
 
           <button
+            type="button"
+            disabled={Boolean(startingExamKey)}
             onClick={() => onStartExamPreset('neet-pg-mini-sectional')}
-            className="px-3.5 py-2.5 rounded-md bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="px-3.5 py-2.5 rounded-md bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
           >
             <Layers className="w-3.5 h-3.5 text-amber-400" />
-            <span>25-Q Sectional Sprint</span>
+            <span>
+              {startingExamKey === 'neet-pg-mini-sectional' ? 'Starting...' : '25-Q Sectional Sprint'}
+            </span>
           </button>
 
           <button
+            type="button"
+            disabled={Boolean(startingExamKey)}
             onClick={onOpenCustomGenerator}
-            className="px-3.5 py-2.5 rounded-md bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="px-3.5 py-2.5 rounded-md bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
           >
             <Sliders className="w-3.5 h-3.5" />
             <span>Custom Builder</span>

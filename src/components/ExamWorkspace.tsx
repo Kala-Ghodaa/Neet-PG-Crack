@@ -105,6 +105,9 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
     questionEntryTimestampRef.current = Date.now();
   }, []);
 
+  const onExamSubmittedRef = useRef(onExamSubmitted);
+  onExamSubmittedRef.current = onExamSubmitted;
+
   const loadSessionState = useCallback(async () => {
     try {
       setLoading(true);
@@ -114,7 +117,7 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
         data.session.status === 'submitted' ||
         data.session.status === 'auto_submitted'
       ) {
-        onExamSubmitted(sessionId);
+        onExamSubmittedRef.current(sessionId);
         return;
       }
 
@@ -160,7 +163,7 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [sessionId, onExamSubmitted, syncLocalQuestionControls]);
+  }, [sessionId, syncLocalQuestionControls]);
 
   useEffect(() => {
     loadSessionState();
