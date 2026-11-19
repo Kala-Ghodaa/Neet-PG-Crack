@@ -1,0 +1,6 @@
+{
+  "name": "PG-PREP ARENA",
+  "description": "NEET PG Examination & Performance Intelligence Platform with NBEMS CBT workflow, confidence & guess intelligence, and longitudinal knowledge analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

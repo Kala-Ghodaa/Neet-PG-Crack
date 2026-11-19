@@ -1,0 +1,332 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { Menu } from 'lucide-react';
+import {
+  apiFetch,
+  signInWithGooglePopup,
+  signOutUser,
+  setActiveCandidateProfile,
+} from './lib/api.ts';
+import { ExamWorkspace } from './components/ExamWorkspace.tsx';
+import { PostExamReview } from './components/PostExamReview.tsx';
+import { IntelligenceDashboard } from './components/IntelligenceDashboard.tsx';
+import { CustomTestGeneratorModal } from './components/CustomTestGeneratorModal.tsx';
+import { AdminQuestionBank } from './components/AdminQuestionBank.tsx';
+import { NavigationDrawer } from './components/NavigationDrawer.tsx';
+import { FullMockTestSeries } from './components/FullMockTestSeries.tsx';
+import { ImportMockPaperModal } from './components/ImportMockPaperModal.tsx';
+
+type ActiveRoute =
+  | { view: 'dashboard' }
+  | { view: 'mocks' }
+  | { view: 'exam'; sessionId: number }
+  | { view: 'review'; sessionId: number }
+  | { view: 'admin' };
+
+export default function App() {
+  const [route, setRoute] = useState<ActiveRoute>({ view: 'dashboard' });
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showCustomModal, setShowCustomModal] = useState<boolean>(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
+  const [showImportModal, setShowImportModal] = useState<boolean>(false);
+
+  const loadDashboardAndUser = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [meRes, analyticsRes] = await Promise.all([
+        apiFetch('/api/v1/auth/me'),
+        apiFetch('/api/v1/analytics/overview'),
+      ]);
+      setUserProfile(meRes.user);
+      setAnalyticsData(analyticsRes);
+      setError(null);
+    } catch (err: any) {
+      setError(err.message || 'Failed to initialize platform state');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDashboardAndUser();
+  }, [loadDashboardAndUser]);
+
+  const handleStartExamPreset = async (configKey: string, filters?: any) => {
+    try {
+      setLoading(true);
+      const res = await apiFetch('/api/v1/exams/start', {
+        method: 'POST',
+        body: JSON.stringify({ configKey, filters }),
+      });
+      setRoute({ view: 'exam', sessionId: res.session.id });
+    } catch (err: any) {
+      setError(err.message || 'Could not start examination');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartCustomTest = async (filters: any) => {
+    setShowCustomModal(false);
+    await handleStartExamPreset('neet-pg-custom', filters);
+  };
+
+  const handleOpenOrReviewSession = async (sessionId: number) => {
+    const sess = analyticsData?.recentSessions?.find(
+      (s: any) => s.sessionId === sessionId
+    );
+    if (sess && sess.status === 'in_progress') {
+      setRoute({ view: 'exam', sessionId });
+    } else {
+      setRoute({ view: 'review', sessionId });
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      await signInWithGooglePopup();
+      await loadDashboardAndUser();
+    } catch {
+      // If popup is blocked in sandboxed preview, toggle between Candidate and Admin profiles
+      const nextUid =
+        userProfile?.uid === 'admin-candidate-01'
+          ? 'demo-candidate-01'
+          : 'admin-candidate-01';
+      setActiveCandidateProfile(nextUid);
+      await loadDashboardAndUser();
+    }
+  };
+
+  // Full-screen NBEMS Examination Mode hides top marketing/dashboard chrome for zero distraction
+  if (route.view === 'exam') {
+    return (
+      <ExamWorkspace
+        sessionId={route.sessionId}
+        candidateName={userProfile?.displayName || 'Dr. Ananya Sharma'}
+        onExamSubmitted={async (submittedSessionId) => {
+          await loadDashboardAndUser();
+          setRoute({ view: 'review', sessionId: submittedSessionId });
+        }}
+        onExitToDashboard={async () => {
+          await loadDashboardAndUser();
+          setRoute({ view: 'dashboard' });
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-slate-900">
+      {/* STRICT 3-ZONE TOP BAR CONTRACT (Frontend Design Constitution Section 2) */}
+      <header className="flex items-center justify-between gap-6 px-6 py-3.5 bg-white border-b border-slate-200 sticky top-0 z-30">
+        {/* Zone 1: Burger Menu + Single text element wordmark */}
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsDrawerOpen(true)}
+            aria-label="Open navigation drawer"
+            className="p-1.5 -ml-1.5 rounded hover:bg-slate-100 text-slate-700 hover:text-slate-900 transition-colors cursor-pointer"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <a
+            href="#dashboard"
+            onClick={(e) => {
+              e.preventDefault();
+              setRoute({ view: 'dashboard' });
+            }}
+            className="text-base font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
+          >
+            PG-PREP ARENA
+          </a>
+        </div>
+
+        {/* Zone 2: Concise single-line text navigation links */}
+        <nav className="hidden md:flex items-center gap-5 text-xs font-medium text-slate-600">
+          <a
+            href="#dashboard"
+            onClick={(e) => {
+              e.preventDefault();
+              setRoute({ view: 'dashboard' });
+            }}
+            className={`hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 ${
+              route.view === 'dashboard' ? 'text-slate-900 font-semibold underline underline-offset-4' : ''
+            }`}
+          >
+            Dashboard
+          </a>
+          <a
+            href="#full-mocks"
+            onClick={(e) => {
+              e.preventDefault();
+              setRoute({ view: 'mocks' });
+            }}
+            className={`hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 ${
+              route.view === 'mocks' ? 'text-slate-900 font-semibold underline underline-offset-4' : ''
+            }`}
+          >
+            Full Mock Series
+          </a>
+          <a
+            href="#custom-test"
+            onClick={(e) => {
+              e.preventDefault();
+              setShowCustomModal(true);
+            }}
+            className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0"
+          >
+            Custom Test
+          </a>
+          <a
+            href="#latest-review"
+            onClick={(e) => {
+              e.preventDefault();
+              const latestId = analyticsData?.latestAnalysis?.sessionId;
+              if (latestId) setRoute({ view: 'review', sessionId: latestId });
+            }}
+            className={`hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 ${
+              route.view === 'review' ? 'text-slate-900 font-semibold underline underline-offset-4' : ''
+            }`}
+          >
+            Post-Exam Review
+          </a>
+          <a
+            href="#admin"
+            onClick={(e) => {
+              e.preventDefault();
+              setRoute({ view: 'admin' });
+            }}
+            className={`hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 ${
+              route.view === 'admin' ? 'text-slate-900 font-semibold underline underline-offset-4' : ''
+            }`}
+          >
+            Question Bank
+          </a>
+        </nav>
+
+        {/* Zone 3: Actions (Import Test + Google Profile Switcher) */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowImportModal(true)}
+            className="hidden sm:inline-flex items-center px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            + Import Test
+          </button>
+          <button
+            onClick={handleGoogleLogin}
+            className="px-3 py-1.5 text-xs font-semibold text-white bg-slate-900 rounded-md hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            {userProfile?.displayName
+              ? `${userProfile.displayName.split(' (')[0]} · Switch`
+              : 'Sign In'}
+          </button>
+        </div>
+      </header>
+
+      {/* Error Banner if any */}
+      {error && (
+        <div className="max-w-[1440px] w-full mx-auto px-6 pt-4">
+          <div className="p-3.5 rounded bg-red-50 border border-red-200 text-xs text-red-800 flex items-center justify-between">
+            <span>{error}</span>
+            <button
+              onClick={() => loadDashboardAndUser()}
+              className="font-semibold underline cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Viewport */}
+      <div className="flex-1">
+        {loading && !analyticsData ? (
+          <div className="max-w-[1440px] mx-auto px-6 py-16 text-center">
+            <div className="w-8 h-8 border-2 border-slate-900 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm font-semibold text-slate-900">
+              Loading PG-PREP ARENA Examination & Performance Intelligence...
+            </p>
+          </div>
+        ) : route.view === 'review' ? (
+          <PostExamReview
+            sessionId={route.sessionId}
+            onBackToDashboard={() => setRoute({ view: 'dashboard' })}
+            onOpenFullAnalytics={() => setRoute({ view: 'dashboard' })}
+          />
+        ) : route.view === 'admin' ? (
+          <AdminQuestionBank />
+        ) : route.view === 'mocks' ? (
+          <FullMockTestSeries
+            onStartExam={(examId: string) => handleStartExamPreset(examId)}
+            onReviewSession={(sessionId: number) => setRoute({ view: 'review', sessionId })}
+            onOpenImportModal={() => setShowImportModal(true)}
+            onBackToDashboard={() => setRoute({ view: 'dashboard' })}
+          />
+        ) : (
+          <IntelligenceDashboard
+            analyticsData={analyticsData}
+            onStartExamPreset={handleStartExamPreset}
+            onOpenCustomGenerator={() => setShowCustomModal(true)}
+            onReviewSession={handleOpenOrReviewSession}
+            onNavigateToMocks={() => setRoute({ view: 'mocks' })}
+            onOpenImportModal={() => setShowImportModal(true)}
+          />
+        )}
+      </div>
+
+      {/* Quiet Footer */}
+      <footer className="border-t border-slate-200 bg-white px-6 py-4 mt-12">
+        <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-4 text-xs text-slate-500">
+          <span>
+            PG-PREP ARENA · NEET PG Examination & Performance Intelligence Platform
+          </span>
+          <span>
+            Independent Demonstration Question Bank · Configurable NBEMS CBT Workflow
+          </span>
+        </div>
+      </footer>
+
+      {/* Navigation Hamburger Drawer */}
+      <NavigationDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        activeView={route.view}
+        onNavigate={(view) => {
+          setRoute({ view } as ActiveRoute);
+        }}
+        onStartFullMock={() => handleStartExamPreset('neet-pg-full-mock-1')}
+        onOpenCustomTest={() => setShowCustomModal(true)}
+        onOpenImportTest={() => setShowImportModal(true)}
+        userProfile={userProfile}
+        analyticsOverview={analyticsData?.overview}
+        onSignOutOrSwitch={handleGoogleLogin}
+      />
+
+      {/* Import Mock Paper Modal */}
+      {showImportModal && (
+        <ImportMockPaperModal
+          onClose={() => setShowImportModal(false)}
+          onImportSuccess={(newPaper) => {
+            setShowImportModal(false);
+            setRoute({ view: 'mocks' });
+          }}
+        />
+      )}
+
+      {showCustomModal && (
+        <CustomTestGeneratorModal
+          onClose={() => setShowCustomModal(false)}
+          onStartCustomTest={handleStartCustomTest}
+        />
+      )}
+    </div>
+  );
+}

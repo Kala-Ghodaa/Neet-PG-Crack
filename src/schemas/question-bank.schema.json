@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pg-prep-arena.internal/schemas/question-bank.schema.json",
+  "title": "PGPrepArenaQuestionBankSchema",
+  "description": "Standard JSON Schema specification for NBEMS NEET-PG and INI-CET Clinical Question Banks with Confidence, 50-50 Elimination, and Multi-Option Explanations.",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/questionItem"
+  },
+  "$defs": {
+    "subjectIdEnum": {
+      "type": "string",
+      "enum": [
+        "anatomy",
+        "physiology",
+        "biochemistry",
+        "pathology",
+        "pharmacology",
+        "microbiology",
+        "forensic-medicine",
+        "forensic_medicine",
+        "community-medicine",
+        "community_medicine",
+        "ent",
+        "ophthalmology",
+        "medicine",
+        "general-medicine",
+        "general_medicine",
+        "surgery",
+        "general-surgery",
+        "general_surgery",
+        "obstetrics-gynecology",
+        "obstetrics_gynecology",
+        "pediatrics",
+        "orthopedics",
+        "dermatology",
+        "psychiatry",
+        "radiology",
+        "anesthesia"
+      ],
+      "description": "Standard 19 NEET-PG and NEXT medical subjects taxonomy slug."
+    },
+    "questionTypeEnum": {
+      "type": "string",
+      "enum": [
+        "single_best_answer",
+        "clinical_vignette",
+        "image_based",
+        "investigation_interpretation",
+        "table_based",
+        "multi_statement",
+        "assertion_reason"
+      ],
+      "description": "Pedagogical classification of the question format."
+    },
+    "difficultyEnum": {
+      "type": "string",
+      "enum": ["easy", "medium", "hard"],
+      "description": "Cognitive difficulty level."
+    },
+    "optionKeyEnum": {
+      "type": "string",
+      "enum": ["A", "B", "C", "D"],
+      "description": "Allowed 4-option keys."
+    },
+    "questionOption": {
+      "type": "object",
+      "required": ["id", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/optionKeyEnum"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "description": "Content of the option."
+        }
+      }
+    },
+    "tableData": {
+      "type": "object",
+      "required": ["headers", "rows"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Optional title for lab data or clinical parameters table."
+        },
+        "headers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "imageData": {
+      "type": "object",
+      "required": ["url", "caption", "altText"],
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri-reference",
+          "description": "URL or relative asset path to clinical photograph, histology slide, ECG, or radiological image."
+        },
+        "caption": {
+          "type": "string",
+          "description": "Explanatory caption."
+        },
+        "altText": {
+          "type": "string",
+          "description": "Screen reader accessible description."
+        }
+      }
+    },
+    "explanationData": {
+      "type": "object",
+      "required": ["summary", "details", "optionExplanations", "learningPoints"],
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 5,
+          "description": "High-yield core takeaway summarizing the diagnosis or mechanism."
+        },
+        "details": {
+          "type": "string",
+          "minLength": 10,
+          "description": "Comprehensive pathophysiological mechanism and rationale."
+        },
+        "optionExplanations": {
+          "type": "object",
+          "required": ["A", "B", "C", "D"],
+          "additionalProperties": false,
+          "properties": {
+            "A": { "type": "string", "minLength": 1 },
+            "B": { "type": "string", "minLength": 1 },
+            "C": { "type": "string", "minLength": 1 },
+            "D": { "type": "string", "minLength": 1 }
+          },
+          "description": "Granular explanation for why each option is correct or incorrect (vital for 50-50 elimination feedback)."
+        },
+        "learningPoints": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 3 },
+          "minItems": 1,
+          "description": "Key bullet takeaways and diagnostic pearls."
+        }
+      }
+    },
+    "metadataData": {
+      "type": "object",
+      "required": ["isPYQ", "year", "source", "references", "tags"],
+      "additionalProperties": false,
+      "properties": {
+        "isPYQ": {
+          "type": "boolean",
+          "description": "True if this question is a Previous Year Question."
+        },
+        "year": {
+          "type": ["integer", "null"],
+          "minimum": 1990,
+          "maximum": 2030,
+          "description": "Exam year if PYQ, or null."
+        },
+        "source": {
+          "type": "string",
+          "description": "Origin exam (e.g. NEET-PG 2024, INI-CET Nov 2023, or AI-Generated)."
+        },
+        "references": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Standard textbooks (e.g. Harrison 21st, Robbins 10th, Bailey & Love 28th)."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Keywords for indexing and analytics."
+        }
+      }
+    },
+    "questionItem": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "questionId",
+        "questionVersion",
+        "subjectId",
+        "systemId",
+        "topicId",
+        "subtopic",
+        "questionType",
+        "difficulty",
+        "question",
+        "options",
+        "correctAnswer",
+        "explanation",
+        "metadata",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "enum": ["1.0"],
+          "description": "Schema version indicator."
+        },
+        "questionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{3,64}$",
+          "description": "Unique alphanumeric question code (e.g. MED-CARD-001)."
+        },
+        "questionVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Monotonically increasing version number."
+        },
+        "subjectId": {
+          "$ref": "#/$defs/subjectIdEnum"
+        },
+        "subjectName": {
+          "type": "string",
+          "description": "Human-readable subject name (optional, derived from subjectId)."
+        },
+        "systemId": {
+          "type": "string",
+          "description": "Organ system identifier (e.g. cardiovascular, cns, endocrine)."
+        },
+        "systemName": {
+          "type": "string",
+          "description": "Human-readable organ system name."
+        },
+        "topicId": {
+          "type": "string",
+          "description": "Topic slug identifier."
+        },
+        "topicName": {
+          "type": "string",
+          "description": "Human-readable topic title."
+        },
+        "subtopic": {
+          "type": "string",
+          "description": "Specific subtopic or lesion."
+        },
+        "questionType": {
+          "$ref": "#/$defs/questionTypeEnum"
+        },
+        "difficulty": {
+          "$ref": "#/$defs/difficultyEnum"
+        },
+        "question": {
+          "type": "object",
+          "required": ["text", "clinicalVignette", "images", "tables"],
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 5,
+              "description": "The question stem or lead-in sentence."
+            },
+            "clinicalVignette": {
+              "type": ["string", "null"],
+              "description": "Patient history, vitals, examination findings, and presenting symptoms."
+            },
+            "images": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/imageData" },
+              "description": "Array of accompanying clinical images or diagrams."
+            },
+            "tables": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/tableData" },
+              "description": "Array of laboratory investigation or data tables."
+            }
+          }
+        },
+        "options": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/questionOption" },
+          "description": "Exactly four options labeled A, B, C, and D."
+        },
+        "correctAnswer": {
+          "$ref": "#/$defs/optionKeyEnum"
+        },
+        "explanation": {
+          "$ref": "#/$defs/explanationData"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadataData"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["published", "draft", "archived"],
+          "default": "published"
+        }
+      }
+    }
+  }
+}

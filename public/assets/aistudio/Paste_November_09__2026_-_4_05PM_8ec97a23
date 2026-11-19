@@ -1,0 +1,2150 @@
+# MASTER DEVELOPMENT PROMPT
+# PG-PREP ARENA — NEET PG EXAMINATION & PERFORMANCE INTELLIGENCE PLATFORM
+
+**Project Type:** Production-grade Web Application  
+**Domain:** Medical Education / Computer-Based Testing (CBT)  
+**Primary Examination:** NEET PG  
+**Development Approach:** Agentic, modular, test-driven development  
+**Target:** Desktop, tablet and mobile browsers
+
+---
+
+# 0. MASTER ROLE & MISSION
+
+You are a Principal Software Architect, Senior Full-Stack Engineer, Product Designer, Database Architect, CBT Examination Specialist, Data Scientist, QA Automation Engineer and Security Engineer.
+
+You have been assigned to architect and develop a production-quality NEET PG preparation platform named:
+
+**PG-PREP ARENA**
+
+Your responsibility is to build an end-to-end examination and preparation ecosystem that combines:
+
+1. The public NBEMS Computer-Based Test examination experience.
+2. A comprehensive, structured medical question bank.
+3. A configurable examination and scoring engine.
+4. An advanced confidence and guess-tracking system.
+5. A performance intelligence and knowledge-gap detection engine.
+6. An administrative question bank management system.
+7. A personalized preparation and revision system.
+
+The application must reproduce the functional examination workflow of the public NBEMS interface, not the branding or proprietary design of any coaching platform.
+
+Marrow and BTR may be considered high-level references for question organization, medical preparation workflows and learning features. Do not copy their proprietary questions, explanations, branding, illustrations, code or assets.
+
+Use independently authored demonstration questions, properly licensed content, or user-provided question banks.
+
+## Core product philosophy
+
+Traditional mock test platforms tell students:
+
+"You scored 520/800."
+
+PG-Prep Arena must tell students:
+
+- What do you actually know?
+- Where are you guessing?
+- Which guesses are working?
+- Which guesses are costing you negative marks?
+- Which subjects are weak?
+- Which topics consume too much time?
+- Which answers are incorrect due to conceptual gaps?
+- Which concepts are being forgotten?
+- Are you improving in accuracy and speed?
+- What should you study next?
+
+**Every mock test must become a measurable learning and improvement cycle.**
+
+Do not build a generic quiz application.
+
+Build an examination-grade platform with a separate intelligence layer.
+
+---
+
+# 1. DEVELOPMENT RULES
+
+Before implementing anything:
+
+1. Inspect the entire repository.
+2. Identify existing frameworks and dependencies.
+3. Understand existing code and architecture.
+4. Identify reusable components.
+5. Check the development environment.
+6. Create an architecture document.
+7. Define the database schema.
+8. Define the API contracts.
+9. Define the question bank JSON schema.
+10. Create an implementation roadmap.
+
+If the repository already contains a working project, preserve its architecture wherever reasonable.
+
+Do not unnecessarily rewrite working code.
+
+Do not create fake backend integrations or static UI demonstrations and claim them as completed functionality.
+
+All critical features must work end-to-end.
+
+Follow these principles:
+
+- Type safety.
+- Separation of concerns.
+- Reusable components.
+- Server-authoritative scoring.
+- Server-authoritative examination timing.
+- Persistent examination state.
+- Reliable event tracking.
+- Database transactions.
+- Accessibility.
+- Responsive design.
+- Automated testing.
+- Secure data handling.
+- Performance optimization.
+
+Document architectural assumptions.
+
+Never invent official examination rules. Verify applicable rules against the latest official NBEMS bulletin and make configurable rules explicit.
+
+---
+
+# 2. PRODUCT ARCHITECTURE
+
+Build the following independent but interconnected modules.
+
+## Module A — Student Dashboard
+
+## Module B — Question Bank Engine
+
+## Module C — NBEMS-style Examination Engine
+
+## Module D — Guess & Confidence Intelligence
+
+## Module E — Performance Analytics Engine
+
+## Module F — Post-Examination Review
+
+## Module G — Custom Test Generator
+
+## Module H — Revision & Bookmark System
+
+## Module I — Administration & Question Bank Management
+
+## Module J — Authentication, Security & User Management
+
+## Module K — Reporting & Recommendation Engine
+
+Keep the examination engine independent from the analytics engine.
+
+The examination engine records reliable data.
+
+The analytics engine interprets that data.
+
+The question bank is independently managed and consumed by both practice and examination modules.
+
+---
+
+# 3. EXAMINATION CONFIGURATION ENGINE
+
+All examination rules must be configurable through a versioned `exam_config` JSON structure.
+
+Do not hardcode examination rules in React components, backend controllers or scoring functions.
+
+## 3.1 Default NEET PG full mock
+
+Create the following default configuration:
+
+| Parameter | Default |
+|---|---|
+| Exam name | NEET PG Full Mock |
+| Questions | 200 |
+| Question type | Single Best Answer |
+| Options | 4 (A, B, C, D) |
+| Duration | 210 minutes |
+| Sections | 5 |
+| Questions per section | 40 |
+| Duration per section | 42 minutes |
+| Correct answer | +4 |
+| Incorrect answer | -1 |
+| Unattempted | 0 |
+| Maximum marks | 800 |
+| Default mode | Sectional |
+
+The configuration represents a NEET PG 2024-style mock pattern. Verify current official examination rules before publishing it as an exact representation of the latest examination.
+
+## 3.2 Configuration capabilities
+
+Support:
+
+- Sectional examination mode.
+- Non-sectional examination mode.
+- Custom examination duration.
+- Custom question count.
+- Custom section count.
+- Custom question distribution.
+- Configurable marking scheme.
+- Configurable answer options.
+- Configurable review functionality.
+- Configurable strict-save mode.
+- Configurable examination navigation.
+- Configurable negative marking.
+- Configurable question types.
+- Configurable section transition rules.
+- Configurable result visibility.
+- Configurable practice and exam modes.
+
+## 3.3 Sample configuration
+
+Use this as a starting structure, then create and validate a formal JSON Schema.
+
+```json
+{
+  "configVersion": "1.0",
+  "examId": "neet-pg-full-mock",
+  "examName": "NEET PG Full Mock",
+  "mode": "exam",
+  "pattern": {
+    "totalQuestions": 200,
+    "questionType": "single_best_answer",
+    "optionsPerQuestion": 4,
+    "durationSeconds": 12600,
+    "sectional": true,
+    "sections": [
+      {
+        "sectionId": "section-a",
+        "name": "Section A",
+        "questionCount": 40,
+        "durationSeconds": 2520,
+        "allowReturnAfterLock": false
+      },
+      {
+        "sectionId": "section-b",
+        "name": "Section B",
+        "questionCount": 40,
+        "durationSeconds": 2520,
+        "allowReturnAfterLock": false
+      }
+    ]
+  },
+  "markingScheme": {
+    "correct": 4,
+    "incorrect": -1,
+    "unattempted": 0
+  },
+  "settings": {
+    "strictSaveMode": true,
+    "allowClearResponse": true,
+    "allowMarkForReview": true,
+    "allowGuessTagging": true,
+    "allowOptionElimination": true,
+    "showResultAfterSubmit": true,
+    "showExplanationDuringExam": false
+  }
+}
+```
+
+The complete 200-question configuration must contain all five sections. Validate that section question counts and durations add up to the configured totals.
+
+The above is an example of the data model, not an official NBEMS API format.
+
+---
+
+# 4. EXAMINATION MODES
+
+Implement three distinct modes.
+
+## 4.1 Exam Mode
+
+This should reproduce the examination experience.
+
+- No immediate correct answer.
+- No explanation before submission.
+- Countdown timer.
+- Configurable sectional restrictions.
+- Save-based answer persistence.
+- Review functionality.
+- Guess tracking.
+- Option elimination.
+- Result after final submission.
+- Automatic submission on expiry.
+
+## 4.2 Tutor / Practice Mode
+
+This mode should focus on learning.
+
+- Instant answer feedback.
+- Correct answer highlighted.
+- Detailed explanation.
+- Individual option explanations.
+- Learning points.
+- Related concepts.
+- Subject and topic information.
+- Guess tracking.
+- Time tracking.
+- Bookmarking.
+
+Allow configurable practice settings:
+
+- Show explanation immediately.
+- Show explanation after answer selection.
+- Show explanation after saving.
+- Allow answer changes.
+- No timer or optional timer.
+- Practice wrong questions only.
+
+## 4.3 Custom Test Mode
+
+Students can create tests using:
+
+- Full-length mock.
+- Subject.
+- System.
+- Topic.
+- Subtopic.
+- Number of questions.
+- Time duration.
+- Difficulty.
+- Previous Year Questions.
+- Bookmarked questions.
+- Incorrect questions.
+- Unattempted questions.
+- Random selection.
+- Mixed question sets.
+
+Prevent duplicate questions unless explicitly requested.
+
+---
+
+# 5. CORE EXAMINATION ENGINE
+
+This is the highest-priority engineering module.
+
+The interface must reproduce the functional conventions of the public NBEMS examination interface.
+
+## 5.1 Desktop layout
+
+Build a responsive examination screen.
+
+### Header
+
+Display:
+
+- Examination name.
+- Candidate name/avatar.
+- Active section.
+- Section tabs.
+- Locked section indicators.
+- Section timer.
+- Overall timer.
+- Submit button.
+
+Timer behavior:
+
+- Normal: neutral.
+- Below 5 minutes: amber.
+- Below 1 minute: red.
+- Optional audible warning.
+- Accessible visual warning independent of sound.
+
+### Main question panel
+
+Display:
+
+- Question number.
+- Question text.
+- Clinical vignette.
+- Rich text.
+- Tables.
+- Images.
+- Diagrams.
+- Answer options.
+- Guess control.
+- Option elimination control.
+- Previous/next navigation.
+
+### Question palette
+
+Show question numbers in a compact grid.
+
+Use standard examination state semantics.
+
+| Question state | Visual |
+|---|---|
+| Not Visited | Grey square |
+| Not Answered | Red/orange shape |
+| Answered | Green shape |
+| Marked for Review | Purple circle |
+| Answered & Marked for Review | Purple circle with green tick |
+
+These states must be derived from persisted response and review data, not independently manipulated visual flags.
+
+An answered-and-marked question must still be evaluated during scoring.
+
+### Palette additional indicators
+
+- Small question mark badge for guessed questions.
+- Separate indication for eliminated options where useful.
+- Current question highlight.
+- Legend explaining every visual indicator.
+
+Do not use a full purple palette fill for guess classification because purple is reserved for review status.
+
+## 5.2 Bottom examination controls
+
+Implement these controls in the following order:
+
+1. Save & Next
+2. Clear Response
+3. Save & Mark for Review
+4. Mark for Review & Next
+5. Back
+6. Next
+7. Submit
+
+Use exact labels where possible.
+
+The application should behave consistently whether the student navigates using buttons, the palette or keyboard shortcuts.
+
+## 5.3 Strict NBEMS save mode
+
+Default: ON.
+
+This is a critical examination rule.
+
+Separate the following states:
+
+- Pending selection.
+- Persisted saved answer.
+- Review status.
+- Guess classification.
+- Eliminated options.
+
+Example:
+
+Student selects option B.
+
+The selection is initially pending.
+
+If the student clicks Save & Next:
+- B becomes the saved answer.
+- The response is persisted.
+- The question becomes Answered.
+
+If the student navigates away without saving:
+- B does not become the saved answer.
+- The question remains Not Answered if previously unanswered.
+- A previously saved answer remains unchanged.
+
+The behavior must be configurable.
+
+### Save & Next
+
+- Commit pending response.
+- Persist all associated changes.
+- Navigate to the next question.
+
+### Clear Response
+
+- Clear pending selection.
+- Clear saved answer when confirmed.
+- Apply explicit guess-clearing rules.
+- Preserve review status unless the user separately removes it.
+
+### Save & Mark for Review
+
+- Save current response.
+- Mark the question for review.
+- Do not navigate automatically unless configured.
+
+### Mark for Review & Next
+
+- Save or preserve response according to configured semantics.
+- Mark the question for review.
+- Navigate to next question.
+
+### Important implementation rule
+
+Never implement saving as a purely frontend operation.
+
+Persist committed responses to the backend and ensure reliable local recovery.
+
+Use optimistic UI only when the server reconciliation strategy is safe and explicit.
+
+---
+
+# 6. SECTIONAL EXAMINATION ENGINE
+
+Support five sections of 40 questions and 42 minutes each by default.
+
+The system must support arbitrary configurable sections.
+
+## Section workflow
+
+1. Start examination.
+2. Open Section A.
+3. Start its timer.
+4. Allow navigation within Section A.
+5. When section time expires, lock the section.
+6. Open Section B.
+7. Continue until all sections finish.
+
+### Section lock rules
+
+When a section is locked:
+
+- Prevent further answer changes.
+- Prevent response clearing.
+- Prevent review changes.
+- Prevent question navigation into that section.
+- Preserve all committed responses.
+- Preserve historical events.
+- Do not allow browser refresh to bypass the lock.
+
+A locked section cannot be reopened unless the examination configuration explicitly permits it.
+
+### Critical timeout behavior
+
+Define a precise policy for unsaved pending responses.
+
+Default to discarding uncommitted selections in strict-save mode.
+
+Do not silently convert a pending selection into a saved answer.
+
+On section transition:
+- Lock the expired section server-side.
+- Commit any valid outstanding operations received before the deadline.
+- Reject late mutations.
+- Open the next section.
+- Record the transition timestamp.
+
+The backend must be the authority for deadlines and section transitions.
+
+## Overall timer
+
+Persist:
+- Examination start time.
+- Overall deadline.
+- Section start time.
+- Section deadline.
+- Current active section.
+- Lock timestamps.
+
+Never reset the timer because of browser refresh, tab switching or device restart.
+
+---
+
+# 7. GUESS & CONFIDENCE INTELLIGENCE ENGINE
+
+This is PG-Prep Arena's primary differentiating feature.
+
+Build it as a first-class independent module.
+
+## 7.1 Confidence classifications
+
+Support three confidence classifications:
+
+### A. Sure
+
+Default state when Guess mode is OFF.
+
+Meaning: The student believes they know the answer.
+
+### B. Main Guess
+
+Visual:
+- Background: #E9D5FF
+- Border: #A855F7
+
+Meaning: The selected saved answer is based on a guess.
+
+This is the actual graded response.
+
+### C. Second Guess
+
+Visual:
+- Background: #FED7AA
+- Border: #F97316
+
+Meaning: The student has another possible alternative answer.
+
+This is never graded.
+
+The Second Guess is used only for analytical purposes.
+
+## 7.2 Guess interaction
+
+Add a Guess toggle near the answer options.
+
+Keyboard shortcut: G.
+
+When Guess is active:
+
+- The selected and saved answer becomes Main Guess.
+- The student may optionally mark one other option as Second Guess.
+- The Main Guess and Second Guess must be different.
+- Only one Main Guess and one Second Guess are permitted.
+- Changing the selected saved answer updates Main Guess.
+- Guess state must be independently removable.
+
+For alternative selection, support:
+- Right-click on desktop.
+- Long-press on mobile.
+- Shift + 1–4 keyboard shortcut.
+
+Ensure right-click and long-press do not conflict with normal navigation or accessibility.
+
+## 7.3 Option elimination
+
+Allow the student to strike through answer options.
+
+Shortcut: Alt + 1–4.
+
+Each question supports zero or more eliminated options, except the actual selected answer must not remain marked as eliminated.
+
+If a previously eliminated option is selected, automatically remove its elimination status.
+
+Store elimination history where useful.
+
+Use a clear visual strike-through and elimination icon.
+
+## 7.4 Guess combinations
+
+Support:
+
+- Sure + no elimination.
+- Sure + elimination.
+- Main Guess.
+- Main Guess + Second Guess.
+- Main Guess + elimination.
+- Main Guess + Second Guess + elimination.
+- Guess + Mark for Review.
+- Guess intent without saved answer.
+
+Guess classification and review state must remain independent.
+
+## 7.5 Important edge cases
+
+### Clearing a response
+
+When Clear Response is clicked:
+
+- Clear the selected answer.
+- Clear Main Guess.
+- Ask whether to preserve or clear Second Guess.
+- Preserve or clear eliminated options according to the selected user action.
+- Never silently change the student's confidence classification.
+
+### Guess intent without a saved answer
+
+If Guess is enabled but no response is saved, record:
+
+`guess_intent_unattempted`
+
+This must not count as an attempted answer.
+
+### Guess score
+
+Guess indicators must never change actual examination scoring.
+
+For example:
+
+Correct Main Guess = +4.
+
+Incorrect Main Guess = -1.
+
+Second Guess = no marks and no effect on official answer evaluation.
+
+---
+
+# 8. GUESS ANALYTICS & 50-50 INTELLIGENCE
+
+Build a dedicated Guess Performance dashboard.
+
+## Main Guess metrics
+
+- Total Main Guesses.
+- Correct Main Guesses.
+- Incorrect Main Guesses.
+- Main Guess accuracy.
+- Marks earned through Main Guesses.
+- Negative marks caused by Main Guesses.
+- Guessing percentage.
+- Guess performance by subject.
+- Guess performance by topic.
+
+## Second Guess metrics
+
+- Total Second Guess tags.
+- Number matching the correct answer.
+- Number not matching the correct answer.
+- Frequency of alternative answer selection.
+- Subject-wise performance.
+
+## Sure metrics
+
+- Total Sure answers.
+- Correct Sure answers.
+- Incorrect Sure answers.
+- Sure answer accuracy.
+
+## 50-50 analysis
+
+Example:
+
+Question has four options.
+
+Student:
+- Eliminates A.
+- Eliminates C.
+- Selects B as Main Guess.
+- Tags D as Second Guess.
+
+Correct answer: D.
+
+The analytics engine should record:
+
+- Two options eliminated.
+- Main Guess incorrect.
+- Second Guess correct.
+- Correct answer survived elimination.
+- Final graded response incorrect.
+
+This produces several distinct metrics:
+
+1. Elimination efficiency.
+2. Main Guess accuracy.
+3. Second Guess accuracy.
+4. Correct-answer survival rate.
+5. Performance after reducing options.
+6. Marks lost due to incorrect final selection.
+
+Do not falsely claim that a question was a genuine 50-50 decision simply because two options were eliminated. Label it as elimination-based analysis and distinguish the number of surviving options.
+
+### Guess insights
+
+Examples:
+
+"Your Main Guess accuracy is 58% across 50 questions."
+
+"Your Second Guess matched the correct answer in 12 out of 30 tagged questions."
+
+"You are losing marks through uncertain answers in Pathology."
+
+"Your confident answers have 82% accuracy, while your Main Guess answers have 46% accuracy."
+
+All insights must be calculated from actual records.
+
+Use minimum sample thresholds and clearly display sample size.
+
+---
+
+# 9. ANSWER-CHANGE INTELLIGENCE
+
+Track every committed answer revision.
+
+Example:
+
+| Revision | Saved answer |
+|---|---|
+| 1 | A |
+| 2 | B |
+| 3 | C |
+
+Store:
+- Previous answer.
+- New answer.
+- Timestamp.
+- Time spent before change.
+- Confidence classification before and after.
+- Whether the change was made before or after review.
+
+Calculate:
+
+- Correct to incorrect.
+- Incorrect to correct.
+- Incorrect to incorrect.
+- Unchanged correct.
+- Unchanged incorrect.
+- Number of answer changes.
+- Average answer changes per question.
+
+Generate insights only when sufficient data exists.
+
+Do not encourage students to change or retain answers based on unsupported generic advice.
+
+---
+
+# 10. QUESTION BANK ENGINE
+
+Create a scalable JSON-driven question bank.
+
+## 10.1 Subject taxonomy
+
+Support the standard NEET PG subjects:
+
+1. Anatomy
+2. Physiology
+3. Biochemistry
+4. Pathology
+5. Pharmacology
+6. Microbiology
+7. Forensic Medicine
+8. Community Medicine
+9. ENT
+10. Ophthalmology
+11. Medicine
+12. Dermatology
+13. Psychiatry
+14. Surgery
+15. Orthopedics
+16. Anesthesia
+17. Radiology
+18. Obstetrics and Gynecology
+19. Pediatrics
+
+Allow future additions and taxonomy revisions without application code changes.
+
+## 10.2 Hierarchy
+
+NEET PG
+- Subject
+  - System
+    - Topic
+      - Subtopic
+        - Question
+
+## 10.3 Question types
+
+Initially support:
+
+- Single Best Answer.
+- Clinical vignette.
+- Image-based MCQ.
+- Investigation interpretation.
+- Table-based MCQ.
+- Multi-statement MCQ.
+- Assertion/reason where required by custom test formats.
+
+Design the system so additional question types can be added.
+
+## 10.4 Question metadata
+
+Each question should support:
+
+- Question ID.
+- Question version.
+- Subject.
+- System.
+- Topic.
+- Subtopic.
+- Question text.
+- Clinical vignette.
+- Images.
+- Tables.
+- Options.
+- Correct answer.
+- Detailed explanation.
+- Individual option explanations.
+- Learning points.
+- Difficulty.
+- PYQ flag.
+- PYQ year.
+- Source.
+- References.
+- Tags.
+- Publication status.
+- Created date.
+- Updated date.
+
+---
+
+# 11. QUESTION BANK JSON SCHEMA
+
+The database should be the primary source of truth.
+
+Use JSON as the versioned question bank import/export format and API representation.
+
+Do not store the entire question bank in one massive JSON file.
+
+Use PostgreSQL for structured entities and JSONB for flexible question content where appropriate.
+
+Create formal JSON Schema validation.
+
+## Example question object
+
+```json
+{
+  "schemaVersion": "1.0",
+  "questionId": "PATH-HEMA-00001",
+  "questionVersion": 1,
+  "subjectId": "pathology",
+  "systemId": "hematology",
+  "topicId": "anemia",
+  "subtopic": "Iron deficiency anemia",
+  "questionType": "single_best_answer",
+  "difficulty": "medium",
+  "question": {
+    "text": "Sample independently authored clinical question.",
+    "clinicalVignette": null,
+    "images": [],
+    "tables": []
+  },
+  "options": [
+    {"id": "A", "text": "Option A"},
+    {"id": "B", "text": "Option B"},
+    {"id": "C", "text": "Option C"},
+    {"id": "D", "text": "Option D"}
+  ],
+  "correctAnswer": "B",
+  "explanation": {
+    "summary": "Explanation summary.",
+    "details": "Detailed medical explanation.",
+    "optionExplanations": {
+      "A": "Explanation.",
+      "B": "Correct answer explanation.",
+      "C": "Explanation.",
+      "D": "Explanation."
+    },
+    "learningPoints": []
+  },
+  "metadata": {
+    "isPYQ": false,
+    "year": null,
+    "source": "Original question",
+    "references": [],
+    "tags": []
+  },
+  "status": "published"
+}
+```
+
+Ensure:
+- Correct answer exists in the options.
+- Option IDs are unique.
+- Question ID is unique.
+- Subject and topic references are valid.
+- Required fields are present.
+- Images resolve to valid storage objects.
+- Question versions are immutable after publication where required.
+
+---
+
+# 12. QUESTION BANK ADMIN PANEL
+
+Build a full administration interface.
+
+Admin features:
+
+- Add question.
+- Edit question.
+- Archive question.
+- Restore question.
+- Add images.
+- Edit explanations.
+- Assign topics.
+- Assign difficulty.
+- Mark PYQ.
+- Preview question.
+- Preview test.
+- Search questions.
+- Filter questions.
+- Bulk import.
+- Bulk export.
+- Detect duplicates.
+- Manage taxonomy.
+- Publish/unpublish.
+- Version history.
+
+## Bulk JSON import
+
+Support hundreds or thousands of questions.
+
+Workflow:
+
+1. Upload JSON.
+2. Validate syntax.
+3. Validate schema.
+4. Validate mandatory fields.
+5. Validate answer options.
+6. Validate correct answers.
+7. Validate subject/topic references.
+8. Detect duplicate IDs.
+9. Detect probable content duplicates.
+10. Generate import preview.
+11. Display validation errors.
+12. Allow administrator confirmation.
+13. Import transactionally.
+14. Produce an import report.
+
+Failed imports must not leave partial or inconsistent data.
+
+---
+
+# 13. PERFORMANCE INTELLIGENCE ENGINE
+
+This is the second most important differentiator after the examination engine.
+
+Build a standalone analytics service.
+
+Do not calculate everything directly inside frontend components.
+
+## 13.1 Overall examination analytics
+
+Calculate:
+
+- Total questions.
+- Attempted questions.
+- Correct answers.
+- Incorrect answers.
+- Unattempted questions.
+- Score.
+- Percentage score.
+- Accuracy.
+- Attempt rate.
+- Negative marks.
+- Average question time.
+- Median question time.
+- Total active time.
+- Fastest correct answer.
+- Slowest incorrect answer.
+
+Formula:
+
+Accuracy = Correct / Attempted × 100.
+
+Attempt Rate = Attempted / Total Questions × 100.
+
+Score = Correct × Positive Marks − Incorrect × Negative Marks.
+
+All calculations must use the examination's stored scoring configuration.
+
+## 13.2 Subject-wise analysis
+
+For every subject calculate:
+
+- Total questions.
+- Attempted.
+- Correct.
+- Incorrect.
+- Unattempted.
+- Accuracy.
+- Attempt rate.
+- Marks earned.
+- Marks lost.
+- Average time.
+- Median time.
+- Guess percentage.
+- Main Guess accuracy.
+- Second Guess accuracy.
+- Sure accuracy.
+
+Provide sorting and drill-down.
+
+## 13.3 Topic-wise analysis
+
+Hierarchy:
+
+Subject → System → Topic → Subtopic.
+
+Identify:
+
+- Strong topics.
+- Weak topics.
+- Frequently incorrect topics.
+- High-time-consumption topics.
+- High-guess-frequency topics.
+- Repeated conceptual errors.
+- Declining performance.
+- Low attempt rate.
+
+## 13.4 Speed and accuracy matrix
+
+Classify:
+
+| Accuracy | Speed | Interpretation |
+|---|---|---|
+| High | Fast | Strong mastery |
+| High | Slow | Knowledge exists, speed needs work |
+| Low | Fast | Possible superficial understanding or careless mistakes |
+| Low | Slow | Priority revision |
+
+Thresholds must be configurable.
+
+Do not make strong conclusions from small question samples.
+
+## 13.5 Knowledge gap detection
+
+Calculate a transparent knowledge-gap score using configurable factors:
+
+- Incorrect frequency.
+- Recent incorrect answers.
+- Repeated concept errors.
+- Low accuracy.
+- High time consumption.
+- Guess dependency.
+- Retention failures.
+- Negative marking impact.
+
+Store the formula version.
+
+Show why a topic is classified as weak.
+
+Do not use an unexplained black-box score.
+
+## 13.6 Performance trend analysis
+
+Compare:
+
+- Last 3 mock tests.
+- Last 5 mock tests.
+- Last 10 mock tests.
+- All mock tests.
+- Custom date range.
+
+Display:
+
+- Score progression.
+- Accuracy progression.
+- Speed progression.
+- Subject-wise improvement.
+- Guessing accuracy.
+- Negative marks.
+- Weakness reduction.
+
+Use historical snapshots, not recalculated historical data.
+
+---
+
+# 14. KNOWLEDGE RETENTION ENGINE
+
+Introduce longitudinal learning analysis.
+
+Track performance when the student encounters the same topic across different dates.
+
+Identify:
+
+- Previously correct, now incorrect.
+- Previously incorrect, now correct.
+- Repeatedly incorrect concepts.
+- Topics not revised for a long period.
+- Declining retention.
+- Consistently strong retention.
+
+Support revision intervals such as:
+
+- 1 day.
+- 3 days.
+- 7 days.
+- 15 days.
+- 30 days.
+
+These are configurable suggestions, not mandatory medical learning rules.
+
+Build a revision queue based on:
+- Knowledge-gap score.
+- Recent performance.
+- Repeated mistakes.
+- Last revision date.
+- Confidence history.
+
+---
+
+# 15. PERSONALIZED STUDY RECOMMENDATIONS
+
+Generate a prioritized preparation plan.
+
+Example:
+
+**Priority 1 — Pathology: Hematology**
+
+Reason:
+42% accuracy across 12 attempted questions.
+
+Suggested action:
+Revise anemia and attempt 20 targeted questions.
+
+**Priority 2 — Pharmacology: Autonomic Nervous System**
+
+Reason:
+High accuracy but excessive time consumption.
+
+Suggested action:
+Practice timed clinical MCQs.
+
+**Priority 3 — Anatomy: Neuroanatomy**
+
+Reason:
+Repeated incorrect answers and low-confidence responses.
+
+Suggested action:
+Review core concepts and attempt a revision test.
+
+Each recommendation must contain:
+- Topic.
+- Reason.
+- Evidence.
+- Sample size.
+- Suggested activity.
+- Priority.
+- Improvement measurement.
+
+Avoid unsupported AI-generated medical claims.
+
+If an LLM is later integrated, it should summarize verified analytics rather than invent performance data.
+
+---
+
+# 16. POST-EXAMINATION REVIEW
+
+After submission, generate a detailed result interface.
+
+## Result summary
+
+Display:
+
+- Score.
+- Maximum marks.
+- Correct.
+- Incorrect.
+- Unattempted.
+- Accuracy.
+- Attempt rate.
+- Time used.
+- Negative marks.
+
+## Question review
+
+For each question display:
+
+- Question.
+- Selected answer.
+- Correct answer.
+- Explanation.
+- Option explanations.
+- Time spent.
+- Number of visits.
+- Guess classification.
+- Eliminated options.
+- Review status.
+- Subject.
+- Topic.
+
+## Filters
+
+- All.
+- Correct.
+- Incorrect.
+- Unattempted.
+- Main Guess.
+- Second Guess.
+- Sure.
+- Correct Guess.
+- Incorrect Guess.
+- Eliminated options.
+- Marked for Review.
+
+Allow bookmarking.
+
+Completed examination responses must remain immutable.
+
+Do not reveal correct answers during an active exam unless the test is explicitly configured for practice mode.
+
+---
+
+# 17. EVENT TRACKING & AUDIT SYSTEM
+
+Capture meaningful interactions during the examination.
+
+Example:
+
+```json
+{
+  "eventId": "evt-10001",
+  "sessionId": "session-001",
+  "questionId": "PATH-HEMA-00001",
+  "eventType": "answer_saved",
+  "timestamp": "2026-11-09T10:15:30Z",
+  "metadata": {
+    "selectedOption": "B",
+    "confidence": "main_guess"
+  }
+}
+```
+
+Support:
+
+- question_opened
+- answer_selected
+- answer_saved
+- answer_changed
+- answer_cleared
+- question_marked_review
+- question_unmarked_review
+- guess_enabled
+- guess_primary_selected
+- guess_secondary_selected
+- guess_cleared
+- option_eliminated
+- option_restored
+- next_question
+- previous_question
+- palette_navigation
+- section_started
+- section_locked
+- examination_submitted
+- examination_auto_submitted
+
+Track:
+- First answer timestamp.
+- Final answer timestamp.
+- Time spent.
+- Active time.
+- Number of visits.
+- Answer revisions.
+- Final confidence.
+- Review status.
+- Eliminated options.
+
+Use idempotent event processing.
+
+Prevent duplicate events from inflating analytics.
+
+Do not count idle browser time as active question-solving time.
+
+Implement event batching where appropriate without compromising examination reliability.
+
+---
+
+# 18. STUDENT DASHBOARD DESIGN
+
+Create a premium, uncluttered dashboard.
+
+Sections:
+
+### Overview
+
+- Tests attempted.
+- Total questions solved.
+- Overall accuracy.
+- Average score.
+- Best score.
+- Average time per question.
+
+### Performance
+
+- Score trend.
+- Accuracy trend.
+- Subject-wise performance.
+- Topic-wise performance.
+
+### Intelligence
+
+- Weakest subjects.
+- Strongest subjects.
+- Guessing statistics.
+- Negative marking analysis.
+- Speed versus accuracy.
+
+### Revision
+
+- Revision queue.
+- Weak topics.
+- Incorrect questions.
+- Bookmarked questions.
+- Retention warnings.
+
+### Recent activity
+
+- Recent mock tests.
+- Recent practice sessions.
+- Performance changes.
+
+Use meaningful charts and data visualizations.
+
+Do not display misleading or decorative charts containing fabricated information.
+
+---
+
+# 19. UI/UX DESIGN SYSTEM
+
+The product must look and feel like a premium medical examination platform.
+
+## Design direction
+
+- Clean.
+- Minimal.
+- Professional.
+- Highly readable.
+- Fast.
+- Accessible.
+- Examination-focused.
+
+Avoid:
+- Excessive gradients.
+- Unnecessary animations.
+- Overcrowded dashboards.
+- Large decorative elements.
+- Distracting transitions.
+
+## Examination palette colors
+
+- Grey: Not visited.
+- Red/orange: Visited, unanswered.
+- Green: Answered.
+- Purple: Marked for review.
+- Light purple: Main Guess.
+- Light orange: Second Guess.
+- Blue: Navigation and primary actions.
+
+Use distinct visual encodings so confidence and response states never become ambiguous.
+
+## Responsive requirements
+
+Desktop:
+- Full examination layout.
+- Question palette visible.
+- Main question area.
+- Sticky timers.
+
+Tablet:
+- Compact palette.
+- Responsive controls.
+
+Mobile:
+- Full-width question panel.
+- Collapsible palette drawer.
+- Large touch targets.
+- Long-press support.
+- Bottom navigation.
+- Responsive options.
+
+Support keyboard navigation and screen readers.
+
+Suggested shortcuts:
+
+| Shortcut | Action |
+|---|---|
+| G | Toggle Guess |
+| 1–4 | Select option |
+| Alt + 1–4 | Eliminate option |
+| Shift + 1–4 | Mark Second Guess |
+| Arrow Left | Previous question |
+| Arrow Right | Next question |
+| Enter | Save & Next |
+| X | Clear response |
+
+Shortcuts must not interfere with normal text selection or accessibility.
+
+---
+
+# 20. TECHNICAL STACK
+
+First inspect the repository.
+
+If starting from scratch, evaluate:
+
+## Frontend
+
+- React.
+- Next.js.
+- TypeScript.
+- Tailwind CSS.
+- Reusable accessible components.
+- TanStack Query or equivalent.
+- Zustand or equivalent state management where appropriate.
+
+## Backend
+
+- Node.js.
+- NestJS or an equivalent structured backend.
+- REST APIs.
+- Versioned API routes.
+- WebSockets only when required.
+
+## Database
+
+- PostgreSQL.
+- JSONB for flexible content.
+- Redis for caching and ephemeral workloads where justified.
+
+## Storage
+
+- S3-compatible image storage.
+- CDN for static assets.
+
+## Testing
+
+- Vitest or Jest.
+- Playwright.
+- API integration testing.
+- Load testing.
+
+## Deployment
+
+- Docker.
+- CI/CD.
+- Environment-based configuration.
+- Database migrations.
+- Backup and recovery.
+
+These are recommendations. Choose and document the final stack based on repository and deployment requirements.
+
+---
+
+# 21. DATABASE ARCHITECTURE
+
+Create normalized, indexed database entities.
+
+Minimum entities:
+
+1. users
+2. roles
+3. permissions
+4. subjects
+5. systems
+6. topics
+7. subtopics
+8. questions
+9. question_options
+10. question_explanations
+11. question_images
+12. question_versions
+13. exam_configs
+14. test_templates
+15. test_sessions
+16. test_sections
+17. test_questions
+18. student_responses
+19. answer_revisions
+20. guess_classifications
+21. eliminated_options
+22. review_flags
+23. bookmarks
+24. question_events
+25. test_results
+26. analytics_snapshots
+27. study_recommendations
+28. revision_records
+29. admin_audit_logs
+
+Use suitable relationships and indexes.
+
+Do not over-normalize event payloads if a JSONB representation provides a better audit structure.
+
+Maintain referential integrity.
+
+## Historical consistency
+
+A completed examination must preserve:
+
+- Question version.
+- Question content snapshot.
+- Correct answer snapshot.
+- Marking scheme snapshot.
+- Exam configuration snapshot.
+- Section configuration snapshot.
+
+Editing a question later must never change the results of previously completed examinations.
+
+---
+
+# 22. API ARCHITECTURE
+
+Create versioned APIs.
+
+Suggested groups:
+
+### Authentication
+
+- POST /api/v1/auth/register
+- POST /api/v1/auth/login
+- POST /api/v1/auth/logout
+- GET /api/v1/auth/me
+
+### Question bank
+
+- GET /api/v1/questions
+- GET /api/v1/questions/:id
+- GET /api/v1/subjects
+- GET /api/v1/topics
+
+### Examination
+
+- POST /api/v1/exams/start
+- GET /api/v1/exams/:sessionId
+- GET /api/v1/exams/:sessionId/questions
+- POST /api/v1/exams/:sessionId/responses
+- POST /api/v1/exams/:sessionId/review
+- POST /api/v1/exams/:sessionId/guess
+- POST /api/v1/exams/:sessionId/eliminations
+- POST /api/v1/exams/:sessionId/sections/transition
+- POST /api/v1/exams/:sessionId/submit
+
+### Results
+
+- GET /api/v1/results/:sessionId
+- GET /api/v1/results/:sessionId/analysis
+
+### Analytics
+
+- GET /api/v1/analytics/overview
+- GET /api/v1/analytics/subjects
+- GET /api/v1/analytics/topics
+- GET /api/v1/analytics/guess-performance
+- GET /api/v1/analytics/speed-accuracy
+- GET /api/v1/analytics/trends
+- GET /api/v1/analytics/knowledge-gaps
+
+### Administration
+
+- POST /api/v1/admin/questions/import
+- POST /api/v1/admin/questions
+- PATCH /api/v1/admin/questions/:id
+- DELETE /api/v1/admin/questions/:id
+- GET /api/v1/admin/import-jobs
+- GET /api/v1/admin/questions
+
+Define exact request/response schemas.
+
+Do not expose correct answers during exam mode.
+
+All examination mutations must validate:
+- User authorization.
+- Session status.
+- Active section.
+- Section deadline.
+- Question membership.
+- Allowed state transitions.
+- Idempotency.
+
+---
+
+# 23. SECURITY AND RELIABILITY
+
+Implement:
+
+- Secure authentication.
+- Role-based access control.
+- Password hashing.
+- Session security.
+- Rate limiting.
+- Input validation.
+- Protected administration APIs.
+- Secure image uploads.
+- Audit logs.
+- Database backups.
+- Server-side scoring.
+- Server-side timer validation.
+- Duplicate submission prevention.
+- Concurrent session handling.
+- Exam answer protection.
+- Correct answer concealment during active examinations.
+
+Never trust client-side timestamps or scoring calculations.
+
+## Network failures
+
+Support temporary connectivity loss.
+
+- Preserve pending UI state locally.
+- Queue permitted mutations.
+- Retry with idempotency keys.
+- Reconcile with server state.
+- Show synchronization status.
+- Never silently discard committed responses.
+
+The server must reject unauthorized or late updates.
+
+## Browser refresh
+
+Restore:
+- Active session.
+- Remaining time.
+- Active section.
+- Saved responses.
+- Review flags.
+- Guess classifications.
+- Eliminated options.
+- Question navigation position.
+
+A browser refresh must never reset an examination.
+
+---
+
+# 24. MULTI-AGENT DEVELOPMENT
+
+If the coding environment supports parallel agents, use the following architecture.
+
+Appoint a Lead Architect / Engineering Coordinator.
+
+The lead agent owns integration, shared contracts and overall quality.
+
+## Agent 1 — Product & Examination Research
+
+Responsibilities:
+- Analyze public NBEMS examination workflows.
+- Verify official examination rules.
+- Document question states.
+- Document save semantics.
+- Document section restrictions.
+- Produce examination acceptance criteria.
+
+## Agent 2 — UI/UX
+
+Responsibilities:
+- Dashboard.
+- Examination interface.
+- Question palette.
+- Guess tagging.
+- Review states.
+- Result screen.
+- Analytics dashboard.
+- Responsive components.
+
+## Agent 3 — Backend & Database
+
+Responsibilities:
+- Database schema.
+- Authentication.
+- APIs.
+- Question bank.
+- JSON validation.
+- Administration.
+- Audit logs.
+
+## Agent 4 — Examination Engine
+
+Responsibilities:
+- Session creation.
+- Timers.
+- Section locking.
+- Save functionality.
+- Navigation.
+- Response persistence.
+- Guess tagging.
+- Submission.
+- Scoring.
+
+## Agent 5 — Analytics Intelligence
+
+Responsibilities:
+- Accuracy.
+- Speed.
+- Subject/topic analysis.
+- Guess performance.
+- Elimination intelligence.
+- Answer-change analysis.
+- Knowledge gaps.
+- Retention.
+- Study recommendations.
+
+## Agent 6 — QA & Security
+
+Responsibilities:
+- Functional testing.
+- Scoring validation.
+- Sectional workflow testing.
+- Browser refresh.
+- Network failures.
+- Security.
+- Load testing.
+- Accessibility.
+
+## Lead Architect rules
+
+1. Define shared interfaces first.
+2. Define API contracts first.
+3. Define database ownership.
+4. Avoid conflicting modifications.
+5. Require tests before integration.
+6. Review all agent output.
+7. Run end-to-end tests.
+8. Fix integration defects.
+9. Maintain architecture documentation.
+
+Do not allow independent agents to invent incompatible data models.
+
+Use a shared task tracker.
+
+If parallel agents are unavailable, execute the same workstreams sequentially.
+
+---
+
+# 25. TESTING & ACCEPTANCE CRITERIA
+
+The application is not complete until all critical scenarios pass.
+
+## A. Examination tests
+
+- Start examination.
+- Navigate between questions.
+- Select an answer.
+- Save an answer.
+- Change a pending answer.
+- Change a saved answer.
+- Clear response.
+- Mark for review.
+- Answer and mark for review.
+- Add Main Guess.
+- Add Second Guess.
+- Change confidence.
+- Eliminate options.
+- Restore eliminated options.
+- Navigate through palette.
+- Refresh browser.
+- Disconnect and reconnect network.
+- Submit manually.
+- Auto-submit.
+- Prevent duplicate submission.
+
+## B. Section tests
+
+- Section timer starts correctly.
+- Section timer persists.
+- Section locks on expiry.
+- Next section opens.
+- Locked section cannot be revisited.
+- Locked answers cannot be modified.
+- Refresh cannot bypass locking.
+- Late API mutations are rejected.
+- Pending unsaved selections follow configured timeout rules.
+
+## C. Scoring tests
+
+Verify:
+
+| Scenario | Expected result |
+|---|---:|
+| Correct | +4 |
+| Incorrect | -1 |
+| Unattempted | 0 |
+| Correct Main Guess | +4 |
+| Incorrect Main Guess | -1 |
+| Second Guess | No marks |
+| Correct + Review | +4 |
+| Incorrect + Review | -1 |
+| Unanswered + Review | 0 |
+
+Also verify:
+- Maximum marks.
+- Partial test scoring.
+- Negative marking.
+- Sectional scoring.
+- Custom scoring.
+- Historical scoring snapshots.
+
+## D. Analytics tests
+
+Verify:
+- Overall accuracy.
+- Subject accuracy.
+- Topic accuracy.
+- Main Guess accuracy.
+- Second Guess accuracy.
+- Sure accuracy.
+- Elimination analysis.
+- Answer-change statistics.
+- Speed and accuracy matrix.
+- Knowledge-gap calculation.
+- Retention trends.
+- Sample size thresholds.
+
+## E. Load testing
+
+Simulate:
+- 500 concurrent students.
+- 1,000 concurrent students.
+- 5,000 concurrent students.
+- 5,000 questions in the question bank.
+- Large image-based question sets.
+- Simultaneous examination submissions.
+
+Report actual:
+- Response times.
+- Error rates.
+- Database performance.
+- CPU and memory consumption.
+- Bottlenecks.
+
+Do not claim load testing has passed unless it has actually been executed.
+
+---
+
+# 26. IMPLEMENTATION ROADMAP
+
+Build in the following phases.
+
+## PHASE 1 — Foundation
+
+- Repository setup.
+- Architecture.
+- Design system.
+- Authentication.
+- Database.
+- Migrations.
+- Question bank schema.
+- Question bank APIs.
+- Admin import/export.
+
+Deliverable: Working application foundation.
+
+## PHASE 2 — Examination Engine
+
+- Examination configuration.
+- Session creation.
+- Question rendering.
+- Question navigation.
+- Palette.
+- Strict save mode.
+- Timer.
+- Section locking.
+- Review.
+- Submission.
+- Scoring.
+
+Deliverable: Fully functional 200-question examination with configurable rules.
+
+## PHASE 3 — Guess Intelligence
+
+- Sure classification.
+- Main Guess.
+- Second Guess.
+- Guess toggle.
+- Option elimination.
+- Guess-intent tracking.
+- Answer-change tracking.
+- 50-50 analysis.
+
+Deliverable: Complete confidence tracking system.
+
+## PHASE 4 — Analytics
+
+- Overall performance.
+- Subject analysis.
+- Topic analysis.
+- Speed and accuracy.
+- Guess performance.
+- Knowledge gaps.
+- Trend analysis.
+- Retention.
+- Recommendations.
+
+Deliverable: Fully functional performance dashboard.
+
+## PHASE 5 — Advanced Learning
+
+- Custom test generator.
+- Incorrect question practice.
+- Bookmarks.
+- Revision queues.
+- Practice mode.
+- Historical comparisons.
+
+Deliverable: Complete preparation ecosystem.
+
+## PHASE 6 — Production Readiness
+
+- Security audit.
+- Load testing.
+- Responsive testing.
+- Accessibility.
+- CI/CD.
+- Documentation.
+- Backup and recovery.
+- Deployment.
+
+Deliverable: Production-ready application.
+
+---
+
+# 27. SAMPLE DATA REQUIREMENTS
+
+Create a small, independently authored demonstration question bank.
+
+Include:
+- All 19 subjects.
+- Multiple systems.
+- Multiple topics.
+- Easy, medium and difficult questions.
+- Clinical vignettes.
+- Image placeholders.
+- Detailed explanations.
+- Option explanations.
+
+Use clearly labelled demonstration content.
+
+Do not fabricate PYQ provenance.
+
+Do not use scraped or unauthorized coaching-platform question banks.
+
+The question bank must be expandable through JSON import without modifying application code.
+
+---
+
+# 28. PERFORMANCE REQUIREMENTS
+
+Optimize for smooth examination operation.
+
+Targets to validate under realistic test conditions:
+
+- Question navigation should feel instantaneous.
+- No full-page reload between questions.
+- Palette updates should be efficient.
+- Timer should not cause unnecessary component rerenders.
+- Autosave and committed response persistence must be reliable.
+- Large question banks must use server-side pagination.
+- Images should load efficiently.
+- Analytics should use appropriate aggregation and caching.
+
+Avoid loading all 200 complete question records and explanations into the client when they are not required.
+
+Load question content efficiently.
+
+Do not expose correct answers before the appropriate result stage.
+
+---
+
+# 29. REQUIRED PROJECT DELIVERABLES
+
+Provide:
+
+1. Complete working frontend.
+2. Complete working backend.
+3. Database schema.
+4. Database migrations.
+5. Versioned exam configuration schema.
+6. Versioned question bank JSON schema.
+7. Sample question bank.
+8. Administration panel.
+9. Examination engine.
+10. Guess intelligence engine.
+11. Analytics engine.
+12. Revision system.
+13. API documentation.
+14. Automated tests.
+15. Security documentation.
+16. Architecture documentation.
+17. Deployment instructions.
+18. Environment configuration example.
+19. README.
+20. Known limitations and future roadmap.
+
+The README must include exact commands to start the entire application locally.
+
+---
+
+# 30. FINAL EXECUTION INSTRUCTIONS
+
+You are not being asked to produce only a technical proposal.
+
+You are being asked to build the actual application in the available development workspace.
+
+Follow this execution sequence:
+
+**STEP 1:** Inspect the repository and environment.
+
+**STEP 2:** Create the architecture document and implementation roadmap.
+
+**STEP 3:** Define database schemas and API contracts.
+
+**STEP 4:** Implement the question bank and administration system.
+
+**STEP 5:** Implement the examination engine.
+
+**STEP 6:** Implement strict-save functionality.
+
+**STEP 7:** Implement guess tagging and elimination intelligence.
+
+**STEP 8:** Implement scoring and result generation.
+
+**STEP 9:** Implement analytics and performance intelligence.
+
+**STEP 10:** Implement personalized preparation and revision.
+
+**STEP 11:** Execute automated tests.
+
+**STEP 12:** Fix integration defects and verify complete student workflows.
+
+**STEP 13:** Prepare deployment documentation.
+
+At the end of each phase:
+
+- List completed features.
+- List modified files.
+- List tests executed.
+- Report test results.
+- Identify outstanding issues.
+- Continue to the next phase.
+
+Do not stop after creating a plan unless blocked by an essential decision.
+
+Make reasonable documented assumptions where possible.
+
+Ask questions only when an unknown requirement materially affects correctness, security or examination behavior.
+
+Never claim a feature is complete if it is only visually implemented.
+
+Never claim a test passed if it was not executed.
+
+Never fabricate examination rules, medical references or question provenance.
+
+---
+
+# 31. DEFINITION OF DONE
+
+PG-Prep Arena can be considered an MVP only when a student can:
+
+1. Register and log in.
+2. Open a full NEET PG-style mock.
+3. Attempt 200 questions.
+4. Navigate through all questions.
+5. Save responses using strict-save mode.
+6. Mark questions for review.
+7. Use Sure, Main Guess and Second Guess.
+8. Eliminate answer options.
+9. Experience correct sectional timers and locking.
+10. Refresh the browser without losing saved progress.
+11. Submit the examination.
+12. Receive correct marks using the configured marking scheme.
+13. View complete question-wise explanations.
+14. View subject and topic performance.
+15. View Main Guess and Second Guess accuracy.
+16. View elimination intelligence.
+17. Understand speed versus accuracy.
+18. Identify knowledge gaps.
+19. Compare previous mock tests.
+20. Receive actionable revision recommendations.
+
+All of these must work with real backend persistence.
+
+---
+
+# 32. ULTIMATE PRODUCT VISION
+
+PG-PREP ARENA must combine:
+
+**Public NBEMS CBT examination workflow + structured medical question bank + advanced confidence intelligence + personalized preparation analytics.**
+
+During the examination, the platform should feel familiar, predictable, fast and distraction-free.
+
+After the examination, the platform should become a personal academic intelligence system.
+
+A student should be able to understand not just how many marks they scored, but why they scored those marks.
+
+The platform should identify:
+
+- Knowledge.
+- Confidence.
+- Guessing.
+- Elimination ability.
+- Decision-making.
+- Speed.
+- Accuracy.
+- Retention.
+- Conceptual weaknesses.
+- Improvement trends.
+
+The ultimate goal is not simply to conduct more mock tests.
+
+**The goal is to make every mock test smarter than the previous one.**
+
+Build PG-PREP ARENA as a scalable, reliable, secure and production-quality examination platform.
+
+**Architecture first. Functional implementation second. Verified quality always.**
