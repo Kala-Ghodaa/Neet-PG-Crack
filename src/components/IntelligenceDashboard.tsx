@@ -120,7 +120,7 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
           >
             <Play className="w-3.5 h-3.5 fill-slate-950" />
             <span>
-              {startingExamKey === 'neet-pg-full-mock-1' ? 'Starting...' : 'Launch Mock 1 (Oct 18)'}
+              {startingExamKey === 'neet-pg-full-mock-1' ? 'Starting...' : 'Launch Mock 1 (Aug 09)'}
             </span>
           </button>
 
@@ -676,18 +676,36 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({
                     <strong className="text-red-600">{guessIntel.mainGuessIncorrect}</strong>
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 font-sans">Marks Earned (+4 ea):</span>
-                  <strong className="text-emerald-700">
-                    +{guessIntel.marksEarnedFromMainGuesses}
-                  </strong>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 font-sans">Negative Marks Cost (-1 ea):</span>
-                  <strong className="text-red-600">
-                    -{guessIntel.negativeMarksFromMainGuesses}
-                  </strong>
-                </div>
+                {(() => {
+                  const posVal = latestAnalysis?.markingScheme?.correct ?? 4;
+                  const negVal = latestAnalysis?.markingScheme?.incorrect ?? -1;
+                  const negLabel =
+                    Math.abs(negVal + 1 / 3) < 0.02
+                      ? '-⅓'
+                      : Number.isInteger(negVal)
+                      ? String(negVal)
+                      : negVal.toFixed(2);
+                  return (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 font-sans">
+                          Marks Earned (+{posVal} ea):
+                        </span>
+                        <strong className="text-emerald-700">
+                          +{guessIntel.marksEarnedFromMainGuesses}
+                        </strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 font-sans">
+                          Negative Marks Cost ({negLabel} ea):
+                        </span>
+                        <strong className="text-red-600">
+                          -{guessIntel.negativeMarksFromMainGuesses}
+                        </strong>
+                      </div>
+                    </>
+                  );
+                })()}
                 <div className="flex justify-between pt-1 border-t border-slate-100">
                   <span className="text-slate-800 font-sans font-semibold">
                     Net Score Impact of Guessing:

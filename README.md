@@ -32,7 +32,7 @@ PG-PREP ARENA is an end-to-end computer-based examination and academic intellige
 
 ## Key Platform Capabilities
 
-- **NBEMS CBT Examination Engine**: Supports the default 200-question, 210-minute, 5-sectional time-locked NEET PG mock (`+4` correct, `-1` incorrect, `0` unattempted), as well as a 25-question Sectional Sprint, Tutor/Practice Mode, and a Custom Test Builder.
+- **NBEMS & AIIMS CBT Examination Engine**: Supports the default 180-question, 210-minute, 5-sectional time-locked NEET-PG 2026 mock (`5 × 36 Qs × 42m`, `+4` correct, `-1` incorrect, `0` unattempted, 720 marks) and 200-question, 180-minute, 4-sectional INI-CET mock (`4 × 50 Qs × 45m`, `+1` correct, `-⅓` incorrect, 200 marks), as well as a 25-question Sectional Sprint, Tutor/Practice Mode, and a Custom Test Builder.
 - **Strict NBEMS Save Mode**: Separates pending selections from committed saved answers. Includes exact bottom controls (`Save & Next`, `Clear Response`, `Save & Mark for Review`, `Mark for Review & Next`, `Back`, `Next`, `Submit`) and derived palette states.
 - **Guess & Confidence Intelligence**: Supports `Sure`, `Main Guess` (`#E9D5FF` fill / `#A855F7` border), and ungraded analytical `Second Guess` (`#FED7AA` fill / `#F97316` border), plus option elimination (`Alt + 1–4`) and `guess_intent_unattempted` tracking.
 - **Performance Intelligence Engine**: Computes subject/topic breakdowns, 2-surviving-option ("50-50") elimination efficiency, correct-answer survival rate, answer-change impact, a 4-quadrant Speed vs Accuracy matrix, and the `v1.0-transparent` Knowledge-Gap score.

@@ -1021,10 +1021,17 @@ async function executeStartNewExamSession(params: {
     }
 
     const actualTotal = selectedQuestions.length;
-    const isSectional =
+    const isCustomBuilder = Boolean(
+      params.filters?.questionCount || params.configKey === 'neet-pg-custom'
+    );
+    const requestedSectional =
       params.filters?.sectional !== undefined
         ? params.filters.sectional
         : baseConfig.pattern.sectional && actualTotal >= 5;
+    // Prevent short custom drills (< 20 Qs) from fragmenting into absurd 2-Q locked sections
+    const isSectional = isCustomBuilder
+      ? requestedSectional && actualTotal >= 20
+      : requestedSectional;
 
     const baseDurationSec = baseConfig.pattern?.durationSeconds;
     const totalDurationSec = params.filters?.durationMinutes
@@ -1037,12 +1044,12 @@ async function executeStartNewExamSession(params: {
 
     let sectionsConfig = baseConfig.pattern.sections;
     if (isSectional) {
-      const secCount = Math.min(
-        baseConfig.pattern?.sections?.length && !params.filters?.questionCount
-          ? baseConfig.pattern.sections.length
-          : 5,
-        actualTotal
-      );
+      const secCount = isCustomBuilder
+        ? Math.min(5, Math.max(2, Math.floor(actualTotal / 10)))
+        : Math.min(
+            baseConfig.pattern?.sections?.length ? baseConfig.pattern.sections.length : 5,
+            actualTotal
+          );
       const basePerSec = Math.floor(actualTotal / secCount);
       const remainder = actualTotal % secCount;
       const baseDurSec = Math.floor(totalDurationSec / secCount);
@@ -1052,7 +1059,7 @@ async function executeStartNewExamSession(params: {
       sectionsConfig = Array.from({ length: secCount }, (_, idx) => ({
         sectionId: `section-${String.fromCharCode(97 + idx)}`,
         name:
-          (!params.filters?.questionCount && baseConfig.pattern?.sections?.[idx]?.name) ||
+          (!isCustomBuilder && baseConfig.pattern?.sections?.[idx]?.name) ||
           secNames[idx] ||
           `Section ${idx + 1}`,
         questionCount: basePerSec + (idx < remainder ? 1 : 0),
@@ -1495,14 +1502,18 @@ export async function recordQuestionMutation(params: {
 
     if (params.action === 'update_guess_or_elimination') {
       // Update guess classification or option elimination without committing a new savedOption in strict-save mode
-      const cleanedElims = existingResp.savedOption
-        ? params.eliminatedOptions.filter((o) => o !== existingResp.savedOption)
-        : params.eliminatedOptions;
-
       const cleanedSecondGuess =
         existingResp.savedOption && params.secondGuessOption === existingResp.savedOption
           ? null
           : params.secondGuessOption;
+
+      const cleanedElims = [
+        ...new Set(
+          params.eliminatedOptions.filter(
+            (o) => o !== existingResp.savedOption && o !== cleanedSecondGuess
+          )
+        ),
+      ];
 
       const nextConfidence: ConfidenceLevel = existingResp.savedOption
         ? params.guessModeActive
@@ -2138,6 +2149,9 @@ export async function getAggregatedUserAnalytics(userUid: string) {
         ? {
             sessionId: latestResult.sessionId,
             examName: sessionMap.get(latestResult.sessionId)?.examName || 'NEET PG Mock',
+            markingScheme:
+              (sessionMap.get(latestResult.sessionId)?.configSnapshotJson as any)
+                ?.markingScheme || { correct: 4, incorrect: -1, unattempted: 0 },
             score: latestResult.score,
             maxMarks: latestResult.maxMarks,
             percentageScore: latestResult.percentageScore,

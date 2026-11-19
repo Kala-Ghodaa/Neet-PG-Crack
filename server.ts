@@ -608,9 +608,34 @@ async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+        ws: false,
+      },
       appType: 'spa',
     });
+
+    // Preserve Vite client helpers (updateStyle, removeStyle, createHotContext) while skipping
+    // the unreachable HMR WebSocket connection in non-HMR preview environments
+    app.get('/@vite/client', async (_req: Request, res: Response, next: NextFunction) => {
+      try {
+        const result = await vite.transformRequest('/@vite/client');
+        if (!result?.code) {
+          next();
+          return;
+        }
+        const patchedCode = result.code.replace(
+          'transport.connect(createHMRHandler(handleMessage));',
+          '/* HMR WebSocket connection disabled */'
+        );
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        res.send(patchedCode);
+      } catch (err) {
+        next(err);
+      }
+    });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(__dirname, 'dist');

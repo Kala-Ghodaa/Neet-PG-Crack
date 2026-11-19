@@ -250,7 +250,16 @@ export const PostExamReview: React.FC<PostExamReviewProps> = ({
             -{analytics.negativeMarks}
           </div>
           <div className="text-[11px] text-slate-500 mt-0.5 font-mono">
-            {analytics.incorrectCount} incorrect (-1 ea)
+            {(() => {
+              const negVal = sessionState?.session?.config?.markingScheme?.incorrect ?? -1;
+              const negLabel =
+                Math.abs(negVal + 1 / 3) < 0.02
+                  ? '-⅓'
+                  : Number.isInteger(negVal)
+                  ? String(negVal)
+                  : negVal.toFixed(2);
+              return `${analytics.incorrectCount} incorrect (${negLabel} ea)`;
+            })()}
           </div>
         </div>
 

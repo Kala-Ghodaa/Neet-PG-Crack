@@ -120,10 +120,13 @@ export function applyResponseTransition(input: SaveMutationInput): {
   const previousSavedOption = current.savedOption;
   const nowIso = new Date().toISOString();
 
-  // Sanitize eliminations: a committed saved option cannot remain eliminated
-  const sanitizeEliminations = (targetOption: string | null, elims: string[]) => {
-    if (!targetOption) return [...new Set(elims)];
-    return [...new Set(elims.filter((opt) => opt !== targetOption))];
+  // Sanitize eliminations: neither the saved option nor the second guess can remain eliminated
+  const sanitizeEliminations = (
+    targetOption: string | null,
+    elims: string[],
+    secGuess: string | null = null
+  ) => {
+    return [...new Set(elims.filter((opt) => opt !== targetOption && opt !== secGuess))];
   };
 
   // Sanitize second guess: must differ from main saved option
@@ -168,6 +171,11 @@ export function applyResponseTransition(input: SaveMutationInput): {
       if (!preservedSaved && guessModeActive) {
         nextConfidence = 'guess_intent_unattempted';
       }
+      const navSecGuess = sanitizeSecondGuess(
+        preservedSaved,
+        current.secondGuessOption,
+        guessModeActive || Boolean(current.secondGuessOption)
+      );
       return {
         updated: {
           ...current,
@@ -175,7 +183,8 @@ export function applyResponseTransition(input: SaveMutationInput): {
           savedOption: preservedSaved,
           pendingOption: null,
           confidence: nextConfidence,
-          eliminatedOptions: sanitizeEliminations(preservedSaved, eliminatedOptions),
+          secondGuessOption: navSecGuess,
+          eliminatedOptions: sanitizeEliminations(preservedSaved, eliminatedOptions, navSecGuess),
           timeSpentSeconds: current.timeSpentSeconds + additionalTimeSeconds,
         },
         answerRevisionCreated: false,
@@ -191,6 +200,7 @@ export function applyResponseTransition(input: SaveMutationInput): {
         : guessModeActive
         ? 'guess_intent_unattempted'
         : 'sure';
+      const navSecGuess = sanitizeSecondGuess(committed, secondGuessOption, guessModeActive);
       return {
         updated: {
           ...current,
@@ -198,8 +208,8 @@ export function applyResponseTransition(input: SaveMutationInput): {
           savedOption: committed,
           pendingOption: committed,
           confidence: nextConfidence,
-          secondGuessOption: sanitizeSecondGuess(committed, secondGuessOption, guessModeActive),
-          eliminatedOptions: sanitizeEliminations(committed, eliminatedOptions),
+          secondGuessOption: navSecGuess,
+          eliminatedOptions: sanitizeEliminations(committed, eliminatedOptions, navSecGuess),
           timeSpentSeconds: current.timeSpentSeconds + additionalTimeSeconds,
           firstAnsweredAt: current.firstAnsweredAt || (committed ? nowIso : null),
           lastSavedAt: committed ? nowIso : current.lastSavedAt,
@@ -217,7 +227,11 @@ export function applyResponseTransition(input: SaveMutationInput): {
   const isReviewAction =
     action === 'save_and_mark_review' || action === 'mark_review_and_next';
 
-  const nextReviewState = isReviewAction ? true : current.isMarkedForReview;
+  const nextReviewState = isReviewAction
+    ? true
+    : action === 'save_and_next'
+    ? false
+    : current.isMarkedForReview;
 
   let nextConfidence: ConfidenceLevel = 'sure';
   if (effectiveOption) {
@@ -226,12 +240,12 @@ export function applyResponseTransition(input: SaveMutationInput): {
     nextConfidence = 'guess_intent_unattempted';
   }
 
-  const cleanedElims = sanitizeEliminations(effectiveOption, eliminatedOptions);
   const cleanedSecondGuess = sanitizeSecondGuess(
     effectiveOption,
     secondGuessOption,
     guessModeActive || Boolean(secondGuessOption)
   );
+  const cleanedElims = sanitizeEliminations(effectiveOption, eliminatedOptions, cleanedSecondGuess);
 
   const answerRevisionCreated = Boolean(
     effectiveOption && effectiveOption !== previousSavedOption

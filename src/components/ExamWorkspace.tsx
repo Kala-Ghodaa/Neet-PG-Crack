@@ -380,6 +380,8 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
       nextSaved = effPending;
       if (action === 'save_and_mark_review' || action === 'mark_review_and_next') {
         nextReview = true;
+      } else if (action === 'save_and_next') {
+        nextReview = false;
       }
       nextConf = nextSaved
         ? effGuessOn
@@ -584,6 +586,19 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
   };
 
   const handleOptionSelect = (optKey: string) => {
+    // NBEMS Rule (b): Clicking the already-chosen option again deselects it
+    const isCurrentlySelected =
+      pendingOption === optKey || (!pendingOption && currentQuestion?.response?.savedOption === optKey);
+    if (isCurrentlySelected) {
+      if (currentQuestion?.response?.savedOption === optKey) {
+        // Silently clear the committed response while preserving 2nd guess & eliminations
+        executeClearResponse(false, false);
+      } else {
+        setPendingOption(null);
+      }
+      return;
+    }
+
     // Selecting an eliminated option automatically restores it
     const nextElims = eliminatedOptions.filter((e) => e !== optKey);
     const nextSecGuess = secondGuessOption === optKey ? null : secondGuessOption;
@@ -618,13 +633,16 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
     }
     const nextSec = secondGuessOption === optKey ? null : optKey;
     const nextGuessOn = nextSec ? true : guessModeActive;
+    // Mutual exclusion: tagging an option as Second Guess automatically un-eliminates it
+    const nextElims = nextSec ? eliminatedOptions.filter((o) => o !== optKey) : eliminatedOptions;
     setGuessModeActive(nextGuessOn);
     setSecondGuessOption(nextSec);
+    setEliminatedOptions(nextElims);
     persistAction('update_guess_or_elimination', undefined, {
       pendingOpt: pendingOption,
       guessOn: nextGuessOn,
       secGuess: nextSec,
-      elims: eliminatedOptions,
+      elims: nextElims,
     });
   };
 
@@ -643,11 +661,16 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
     const nextElims = isAlreadyElim
       ? eliminatedOptions.filter((o) => o !== optKey)
       : [...eliminatedOptions, optKey];
+    // Mutual exclusion: eliminating an option automatically clears Second Guess on that option
+    const nextSec = !isAlreadyElim && secondGuessOption === optKey ? null : secondGuessOption;
     setEliminatedOptions(nextElims);
+    if (nextSec !== secondGuessOption) {
+      setSecondGuessOption(nextSec);
+    }
     persistAction('update_guess_or_elimination', undefined, {
       pendingOpt: pendingOption,
       guessOn: guessModeActive,
-      secGuess: secondGuessOption,
+      secGuess: nextSec,
       elims: nextElims,
     });
   };
@@ -679,10 +702,21 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
       setShowLockSectionModal(false);
       showTransientBanner(
         isAutoTimeout
-          ? 'Section time expired. Locking current section and advancing...'
+          ? 'Section time expired. Saving active selection, locking section, and advancing...'
           : 'Locking current section and unlocking next section...',
         0
       );
+      // Flush active question's unsaved pending selection before locking section so last-second choices aren't lost
+      if (
+        currentQuestion &&
+        pendingOption &&
+        pendingOption !== currentQuestion.response.savedOption
+      ) {
+        const flushAction = currentQuestion.response.isMarkedForReview
+          ? 'save_and_mark_review'
+          : 'save_and_next';
+        await persistAction(flushAction, currentIdx);
+      }
       await flushOfflineMutations();
       const res = await apiFetch(`/api/v1/exams/${sessionId}/sections/transition`, {
         method: 'POST',
@@ -708,6 +742,17 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
     try {
       setIsSubmittingOrLocking(true);
       setShowSubmitModal(false);
+      // Flush active question's unsaved pending selection before final submission
+      if (
+        currentQuestion &&
+        pendingOption &&
+        pendingOption !== currentQuestion.response.savedOption
+      ) {
+        const flushAction = currentQuestion.response.isMarkedForReview
+          ? 'save_and_mark_review'
+          : 'save_and_next';
+        await persistAction(flushAction, currentIdx);
+      }
       await flushOfflineMutations();
       await apiFetch(`/api/v1/exams/${sessionId}/submit`, {
         method: 'POST',
@@ -781,6 +826,10 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
         Digit2: 'B',
         Digit3: 'C',
         Digit4: 'D',
+        Numpad1: 'A',
+        Numpad2: 'B',
+        Numpad3: 'C',
+        Numpad4: 'D',
       };
       const mappedDigitOption = codeMap[e.code] || keyMap[e.key];
 
@@ -793,9 +842,9 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
       } else if (e.shiftKey && mappedDigitOption) {
         e.preventDefault();
         h.toggleSecondGuess(mappedDigitOption);
-      } else if (['1', '2', '3', '4'].includes(e.key) && !e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      } else if (mappedDigitOption && !e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
-        h.selectOption(keyMap[e.key]);
+        h.selectOption(mappedDigitOption);
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
         h.navBack();
@@ -1512,36 +1561,75 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                {/* 5. Back */}
-                <button
-                  type="button"
-                  onClick={handleNavigateBack}
-                  disabled={currentIdx === 0}
-                  className="px-3.5 py-2 rounded-md bg-white hover:bg-slate-100 disabled:opacity-40 text-slate-700 border border-slate-300 text-xs font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                  <span>Back</span>
-                </button>
+                {(() => {
+                  const prevQ = currentIdx > 0 ? questions[currentIdx - 1] : null;
+                  const nextQ = currentIdx < questions.length - 1 ? questions[currentIdx + 1] : null;
+                  const isBackDisabled =
+                    currentIdx === 0 ||
+                    Boolean(
+                      isSectional &&
+                        prevQ &&
+                        prevQ.sectionIndex !== activeSectionIndex &&
+                        !sections[prevQ.sectionIndex]?.allowReturnAfterLock
+                    );
+                  const isNextDisabled =
+                    currentIdx === questions.length - 1 ||
+                    Boolean(
+                      isSectional &&
+                        nextQ &&
+                        nextQ.sectionIndex !== activeSectionIndex &&
+                        !sections[nextQ.sectionIndex]?.allowReturnAfterLock
+                    );
+                  const isEarlierLockedSection =
+                    isSectional && sections.length > 1 && activeSectionIndex < sections.length - 1;
 
-                {/* 6. Next */}
-                <button
-                  type="button"
-                  onClick={handleNavigateNext}
-                  disabled={currentIdx === questions.length - 1}
-                  className="px-3.5 py-2 rounded-md bg-white hover:bg-slate-100 disabled:opacity-40 text-slate-700 border border-slate-300 text-xs font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  <span>Next</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+                  return (
+                    <>
+                      {/* 5. Back */}
+                      <button
+                        type="button"
+                        onClick={handleNavigateBack}
+                        disabled={isBackDisabled}
+                        className="px-3.5 py-2 rounded-md bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 border border-slate-300 text-xs font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <span>Back</span>
+                      </button>
 
-                {/* 7. Submit */}
-                <button
-                  type="button"
-                  onClick={() => setShowSubmitModal(true)}
-                  className="px-4 py-2 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  Submit
-                </button>
+                      {/* 6. Next */}
+                      <button
+                        type="button"
+                        onClick={handleNavigateNext}
+                        disabled={isNextDisabled}
+                        className="px-3.5 py-2 rounded-md bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 border border-slate-300 text-xs font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                      >
+                        <span>Next</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* 7. Section Lock (Sections A-D) or Final Submit */}
+                      {isEarlierLockedSection ? (
+                        <button
+                          type="button"
+                          disabled={isSubmittingOrLocking}
+                          onClick={() => setShowLockSectionModal(true)}
+                          className="px-4 py-2 rounded-md bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          Lock Section & Next →
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={isSubmittingOrLocking}
+                          onClick={() => setShowSubmitModal(true)}
+                          className="px-4 py-2 rounded-md bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          Submit
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -1781,9 +1869,9 @@ export const ExamWorkspace: React.FC<ExamWorkspaceProps> = ({
             </p>
             {hasUnsavedPendingSelection && (
               <div className="p-3 rounded bg-amber-50 border border-amber-200 text-xs text-amber-900">
-                Warning: Question {currentQuestion.questionOrder} has an unsaved pending option (
-                <strong>{pendingOption}</strong>). Cancel and click{' '}
-                <strong>Save & Next</strong> first if you want it graded.
+                Note: Question {currentQuestion.questionOrder} has an unsaved pending option (
+                <strong>{pendingOption}</strong>). It will be automatically saved before locking
+                this section.
               </div>
             )}
             <div className="flex items-center justify-end gap-3 pt-2">

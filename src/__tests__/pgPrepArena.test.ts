@@ -225,6 +225,75 @@ describe('PG-PREP ARENA — Core Examination, Guess Intelligence & Analytics Tes
       expect(cleared.updated.secondGuessOption).toBe('D');
       expect(cleared.updated.eliminatedOptions).toEqual(['A', 'C']);
     });
+
+    it('clears isMarkedForReview when Save & Next is clicked on a previously reviewed question (BUG-NEET-02)', () => {
+      const reviewed: StudentResponseRecord = {
+        testQuestionId: 4,
+        questionId: 104,
+        questionOrder: 4,
+        sectionIndex: 0,
+        visited: true,
+        savedOption: 'B',
+        pendingOption: 'B',
+        isMarkedForReview: true,
+        confidence: 'sure',
+        secondGuessOption: null,
+        eliminatedOptions: [],
+        timeSpentSeconds: 30,
+        visitCount: 2,
+      };
+
+      expect(derivePaletteState(reviewed)).toBe('answered_and_marked_for_review');
+
+      const saved = applyResponseTransition({
+        current: reviewed,
+        selectedPendingOption: 'B',
+        guessModeActive: false,
+        secondGuessOption: null,
+        eliminatedOptions: [],
+        action: 'save_and_next',
+        strictSaveMode: true,
+        additionalTimeSeconds: 5,
+      });
+
+      expect(saved.updated.savedOption).toBe('B');
+      expect(saved.updated.isMarkedForReview).toBe(false);
+      expect(derivePaletteState(saved.updated)).toBe('answered');
+    });
+
+    it('enforces mutual exclusion between Second Guess and Eliminated Options (BUG-NEET-04)', () => {
+      const initial: StudentResponseRecord = {
+        testQuestionId: 5,
+        questionId: 105,
+        questionOrder: 5,
+        sectionIndex: 0,
+        visited: true,
+        savedOption: null,
+        pendingOption: 'A',
+        isMarkedForReview: false,
+        confidence: 'sure',
+        secondGuessOption: null,
+        eliminatedOptions: ['C', 'D'],
+        timeSpentSeconds: 18,
+        visitCount: 1,
+      };
+
+      const res = applyResponseTransition({
+        current: initial,
+        selectedPendingOption: 'A',
+        guessModeActive: true,
+        secondGuessOption: 'C',
+        eliminatedOptions: ['C', 'D'],
+        action: 'save_and_next',
+        strictSaveMode: true,
+        additionalTimeSeconds: 6,
+      });
+
+      expect(res.updated.savedOption).toBe('A');
+      expect(res.updated.secondGuessOption).toBe('C');
+      // Option C must be removed from eliminatedOptions because it is tagged as Second Guess
+      expect(res.updated.eliminatedOptions).toEqual(['D']);
+    });
   });
 
   describe('3. Official Scoring Verification (Section 25.C Acceptance Table)', () => {
